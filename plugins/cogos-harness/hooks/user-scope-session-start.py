@@ -67,6 +67,40 @@ KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 PROBE_TIMEOUT = 1.0  # short, bounded probe -- never block the hook budget
 REGISTER_TIMEOUT = 1.5
+GRANT_TIMEOUT = 1.0
+
+# v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
+# process and cached: vault file first, loopback grants/current GET as
+# fallback. Any acquisition failure means "proceed without the header" --
+# fail-open, same contract as the rest of this hook. A broken vault must
+# never break registration; the 401 that follows lands in the existing
+# fire-and-forget error handling exactly as it did before this header
+# existed.
+_GRANT_CACHE: dict = {"tried": False, "token": None}
+
+
+def _get_grant() -> str | None:
+    if _GRANT_CACHE["tried"]:
+        return _GRANT_CACHE["token"]
+    _GRANT_CACHE["tried"] = True
+    token = None
+    try:
+        raw = (Path.home() / ".cog" / "vault" / "node-root-grant").read_text(encoding="utf-8")
+        token = raw.strip() or None
+    except Exception:
+        token = None
+    if not token:
+        try:
+            with urllib.request.urlopen(
+                f"{KERNEL_URL}/v1/identity/grants/current?surface=node-root",
+                timeout=GRANT_TIMEOUT,
+            ) as r:
+                if r.status == 200:
+                    token = (json.loads(r.read()).get("token")) or None
+        except Exception:
+            token = None
+    _GRANT_CACHE["token"] = token
+    return token
 
 
 def _find_cog_workspace() -> Path | None:
@@ -196,10 +230,14 @@ def _register_direct(session_id: str, workspace: str, source: str = "") -> None:
         "hostname": socket.gethostname(),
         "extras": {"source": source or "startup", "via": "cogos-harness"},
     }
+    headers = {"Content-Type": "application/json"}
+    grant = _get_grant()
+    if grant:
+        headers["X-Cogos-Grant"] = grant
     req = urllib.request.Request(
         f"{KERNEL_URL}/v1/sessions/register",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

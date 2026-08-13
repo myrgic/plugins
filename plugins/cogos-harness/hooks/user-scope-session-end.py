@@ -39,6 +39,40 @@ KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 PROBE_TIMEOUT = 1.0
 END_TIMEOUT = 1.5
+GRANT_TIMEOUT = 1.0
+
+# v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
+# process and cached: vault file first, loopback grants/current GET as
+# fallback. Any acquisition failure means "proceed without the header" --
+# fail-open, same contract as the rest of this hook. A broken vault must
+# never break session-end; the 401 that follows lands in the existing
+# fire-and-forget error handling exactly as it did before this header
+# existed.
+_GRANT_CACHE: dict = {"tried": False, "token": None}
+
+
+def _get_grant() -> str | None:
+    if _GRANT_CACHE["tried"]:
+        return _GRANT_CACHE["token"]
+    _GRANT_CACHE["tried"] = True
+    token = None
+    try:
+        raw = (Path.home() / ".cog" / "vault" / "node-root-grant").read_text(encoding="utf-8")
+        token = raw.strip() or None
+    except Exception:
+        token = None
+    if not token:
+        try:
+            with urllib.request.urlopen(
+                f"{KERNEL_URL}/v1/identity/grants/current?surface=node-root",
+                timeout=GRANT_TIMEOUT,
+            ) as r:
+                if r.status == 200:
+                    token = (json.loads(r.read()).get("token")) or None
+        except Exception:
+            token = None
+    _GRANT_CACHE["token"] = token
+    return token
 
 
 def _find_cog_workspace() -> Path | None:
@@ -120,13 +154,17 @@ def _end_direct(session_id: str) -> None:
     cog_end_session. Fire-and-forget, fail-open on any error (unknown
     session -> 404, already-ended -> 409, kernel down -> connection error
     -- all silently ignored, matching the rest of this hook's contract)."""
+    headers = {"Content-Type": "application/json"}
+    grant = _get_grant()
+    if grant:
+        headers["X-Cogos-Grant"] = grant
     req = urllib.request.Request(
         f"{KERNEL_URL}/v1/sessions/{urllib.parse.quote(session_id, safe='')}/end",
         # "session_end_hook" is the fleet-wide end_reason vocabulary
         # (established by the settings.local.json session-awareness hook);
         # consumers key on it, so the plugin fallback must not fork it.
         data=json.dumps({"reason": "session_end_hook"}).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

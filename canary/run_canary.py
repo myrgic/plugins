@@ -35,7 +35,13 @@ both canaries with one rule:
                currently emits it. It exists so a future drift-class signal
                can be added without colliding with "broken", and so exit 1
                never means the same thing here as a real regression.
-    2  broken  at least one check failed
+    2  broken  at least one check UNDER TEST failed -- a real conformance
+               regression in the membrane.
+    3  setup   the instrument could not establish its own sandbox, so the
+               checks under test never ran. This is the instrument failing,
+               not the membrane failing, and it must never be reported as
+               "broken": doing so trains the reader to ignore exit 2. A
+               setup failure means the run produced NO EVIDENCE either way.
 
 A JSON report is written to --out (default: canary/.last_run.json,
 gitignored) and a human digest is printed to stdout. The report carries the
@@ -67,6 +73,12 @@ NAME = "membrane"
 EXIT_CLEAN = 0
 EXIT_DRIFT = 1
 EXIT_BROKEN = 2
+EXIT_SETUP = 3
+
+# Sandbox-owned keychain basename. Deliberately not "login.keychain" -- macOS
+# special-cases that name and refuses to unlock it with an empty password even
+# under a sandbox HOME. See setup_keychain's docstring for the measurement.
+SANDBOX_KEYCHAIN = "cc-membrane-canary.keychain"
 
 MARKETPLACE_REPO = "myrgic/plugins"
 PLUGIN_SPEC = "cogos-harness@plugins"
@@ -129,9 +141,25 @@ def probe_kernel(url=DEFAULT_KERNEL_URL, timeout=1.5) -> bool:
 # ---------------------------------------------------------------------------
 
 def setup_keychain(sandbox_home: Path, report: dict) -> None:
-    """Own login keychain under the sandbox HOME so `claude` never touches
-    the real seat's keychain. Verifies the REAL default keychain (queried
-    with the real, unoverridden environment) is unchanged before/after."""
+    """Own keychain under the sandbox HOME so `claude` never touches the real
+    seat's keychain. Verifies the REAL default keychain (queried with the
+    real, unoverridden environment) is unchanged before/after.
+
+    The keychain is deliberately NOT named `login.keychain`. macOS
+    special-cases that basename: `security unlock-keychain -p "" login.keychain`
+    resolves against the real login keychain semantics and fails with "The user
+    name or passphrase you entered is not correct" even when HOME points at a
+    sandbox and the file was just created there with an empty password. That
+    failure is an artifact of the NAME, not of the isolation -- it fired on
+    every run from 2026-08-03 to 2026-08-15 while isolation itself was intact.
+
+    Verified 2026-08-15 under an identical sandbox HOME:
+        create+unlock  login.keychain              -> SecKeychainUnlock error
+        create+unlock  cc-membrane-canary.keychain -> exit 0
+
+    A sandbox-owned basename cannot collide with the special case, so the
+    failure it produced is now unreachable rather than tolerated.
+    """
     real_env = os.environ.copy()
     pre = run(["security", "default-keychain"], env=real_env, timeout=10)
     pre_default = pre["stdout"].decode(errors="replace").strip()
@@ -139,10 +167,10 @@ def setup_keychain(sandbox_home: Path, report: dict) -> None:
     kc_env = os.environ.copy()
     kc_env["HOME"] = str(sandbox_home)
     steps = [
-        ["security", "create-keychain", "-p", "", "login.keychain"],
-        ["security", "default-keychain", "-s", "login.keychain"],
-        ["security", "unlock-keychain", "-p", "", "login.keychain"],
-        ["security", "set-keychain-settings", "login.keychain"],
+        ["security", "create-keychain", "-p", "", SANDBOX_KEYCHAIN],
+        ["security", "default-keychain", "-s", SANDBOX_KEYCHAIN],
+        ["security", "unlock-keychain", "-p", "", SANDBOX_KEYCHAIN],
+        ["security", "set-keychain-settings", SANDBOX_KEYCHAIN],
     ]
     errors = []
     for cmd in steps:
@@ -160,16 +188,23 @@ def setup_keychain(sandbox_home: Path, report: dict) -> None:
         "real_default_keychain_after": post_default,
         "errors": errors,
     })
+
+    # A changed REAL default keychain is a genuine isolation breach -- that is
+    # the membrane failing, and it belongs in failures (exit 2).
     if pre_default != post_default:
         report["failures"].append(
             f"real default keychain changed during sandbox setup: {pre_default!r} -> {post_default!r}"
         )
+    # Errors building the instrument's OWN sandbox are the instrument failing.
+    # They say nothing about the membrane, so they are tracked separately and
+    # graded EXIT_SETUP -- never folded into failures, which would report
+    # "broken" for a run that produced no evidence at all.
     if errors:
-        report["failures"].append(f"sandbox keychain setup had errors: {errors}")
+        report["setup_failures"].append(f"sandbox keychain setup had errors: {errors}")
 
 
 def teardown_keychain(sandbox_home: Path) -> None:
-    kc_path = sandbox_home / "Library" / "Keychains" / "login.keychain-db"
+    kc_path = sandbox_home / "Library" / "Keychains" / f"{SANDBOX_KEYCHAIN}-db"
     if kc_path.exists():
         run(["security", "delete-keychain", str(kc_path)],
             env={**os.environ, "HOME": str(sandbox_home)}, timeout=10)
@@ -655,12 +690,20 @@ def build_digest(report: dict) -> str:
         for f in report["failures"]:
             lines.append(f"  - {f}")
 
+    if report.get("setup_failures"):
+        lines.append("")
+        lines.append("setup failures (INSTRUMENT, not the membrane -- checks under test did not run):")
+        for f in report["setup_failures"]:
+            lines.append(f"  - {f}")
+
     lines.append("")
     lines.append(
         {
             EXIT_CLEAN: "RESULT: clean",
             EXIT_DRIFT: "RESULT: drift",
             EXIT_BROKEN: "RESULT: broken",
+            EXIT_SETUP: "RESULT: setup-failed (instrument could not build its sandbox; "
+                        "no evidence either way about the membrane)",
         }[report.get("exit_code", EXIT_BROKEN)]
     )
 
@@ -690,6 +733,10 @@ def main() -> int:
         "registry_hygiene": None,
         "scrub": None,
         "failures": [],
+        # Instrument-side failures: the sandbox could not be built, so the
+        # checks under test never ran. Kept separate from "failures" so a
+        # broken instrument can never be reported as a broken membrane.
+        "setup_failures": [],
     }
 
     real_host_before = snapshot_real_host()
@@ -750,7 +797,18 @@ def main() -> int:
 
     report["finished_at"] = now_iso()
     report["ok"] = len(report["failures"]) == 0
-    report["exit_code"] = EXIT_CLEAN if report["ok"] else EXIT_BROKEN
+
+    # Grading order matters. A real conformance failure outranks a setup
+    # failure: if a check under test actually failed, the reader must see
+    # "broken" even if the sandbox was also imperfect. Only when nothing
+    # under test failed does a setup failure decide the code -- that is the
+    # case where the run produced no evidence at all.
+    if report["failures"]:
+        report["exit_code"] = EXIT_BROKEN
+    elif report["setup_failures"]:
+        report["exit_code"] = EXIT_SETUP
+    else:
+        report["exit_code"] = EXIT_CLEAN
 
     write_report(report, out_path)
     digest = build_digest(report)

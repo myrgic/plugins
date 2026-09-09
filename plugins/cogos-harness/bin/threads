@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""threads — CLI for the CogOS-harness threads registry.
+
+Subcommands: add | list | check | close. See `threads <cmd> --help`.
+Full design + rationale: lib/threads_core.py and skills/threads/SKILL.md.
+
+State: ~/.cog/status/threads.json (override with COGOS_THREADS_STATE).
+Never hand-writes a derived field (resolved/orphaned/overdue/age) — those
+only ever come out of `threads check`, computed fresh from the predicate.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import threads_core as core  # noqa: E402
+
+
+def _fail(msg: str, code: int = 1) -> None:
+    print(f"threads: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def _load_or_die() -> dict:
+    try:
+        return core.load_state()
+    except core.CorruptStateError as e:
+        _fail(
+            f"state file is corrupt, refusing to touch it: {e}\n"
+            f"  Fix or move it by hand, then retry. (Never auto-reset — see "
+            f"lib/threads_core.py docstring.)"
+        )
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    if not args.predicate or not args.predicate.strip():
+        _fail(
+            "--predicate must not be empty -- a blank predicate runs `/bin/sh -c ''`, "
+            "which exits 0 and reports the thread resolved from nothing"
+        )
+
+    owner = args.owner or os.environ.get("COGOS_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or "unknown"
+    opened = core.now_utc()
+    if core.parse_expected_by(args.expected_by, opened) is None:
+        _fail(
+            f"--expected-by '{args.expected_by}' is neither an ISO8601 timestamp "
+            f"nor a duration like 2h/45m/1d/30s/1w"
+        )
+
+    try:
+        with core.locked_state() as data:
+            ids = {t["id"] for t in data["threads"]}
+            if args.id:
+                if args.id in ids:
+                    _fail(f"id '{args.id}' already exists")
+                thread_id = args.id
+            else:
+                thread_id = core.new_id(args.what, ids)
+            entry = {
+                "id": thread_id,
+                "what": args.what,
+                "why": args.why,
+                "predicate": args.predicate,
+                "opened_at": core.iso(opened),
+                "expected_by": args.expected_by,
+                "owner": owner,
+                "closed_at": None,
+                "closed_reason": None,
+            }
+            data["threads"].append(entry)
+    except core.CorruptStateError as e:
+        _fail(
+            f"state file is corrupt, refusing to touch it: {e}\n"
+            f"  Fix or move it by hand, then retry. (Never auto-reset — see "
+            f"lib/threads_core.py docstring.)"
+        )
+    except core.LockTimeoutError as e:
+        _fail(str(e))
+    print(f"registered thread '{thread_id}'")
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    data = _load_or_die()
+    threads = data["threads"] if args.all else core.open_threads(data)
+    if args.json:
+        print(json.dumps(threads, indent=2))
+        return 0
+    if not threads:
+        print("(no threads)" if args.all else "(no open threads)")
+        return 0
+    now = core.now_utc()
+    for t in threads:
+        opened = core.parse_ts(t.get("opened_at"))
+        age = core.human_age(now - opened) if opened else "?"
+        state = "closed" if t.get("closed_at") else "open"
+        print(f"{t['id']:<28} [{state:<6}] age={age:<8} owner={t.get('owner','?'):<20} {t.get('what','')}")
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    data = _load_or_die()
+    if args.id:
+        try:
+            targets = [core.find_thread(data, args.id)]
+        except core.ThreadNotFoundError:
+            _fail(f"no such thread '{args.id}'")
+    else:
+        targets = core.open_threads(data)
+
+    if not targets:
+        print("(nothing to check)")
+        return 0
+
+    any_orphan = False
+    for t in targets:
+        st = core.derive_status(t, timeout=args.timeout)
+        if st.orphaned:
+            any_orphan = True
+        tag = "RESOLVED" if st.resolved else ("ORPHAN" if st.orphaned else "waiting")
+        note = f" ({st.predicate_note})" if st.predicate_note else ""
+        # NEW-2 (2026-08-07 independent review, delta pass): an
+        # unparseable opened_at makes age/expected_by_ts SYNTHESIZED
+        # stand-ins, not real measurements -- printing them verbatim next
+        # to ORPHAN reads as self-contradicting evidence. Render "?"
+        # instead whenever derive_status flagged the value as unknown.
+        age_str = "?" if st.age_unknown else core.human_age(st.age)
+        if st.expected_by_unknown:
+            exp = "?"
+        else:
+            exp = core.iso(st.expected_by_ts) if st.expected_by_ts else "(none)"
+        print(
+            f"{t['id']:<28} {tag:<9} age={age_str:<8} "
+            f"expected_by={exp}{note}"
+        )
+        if args.verbose:
+            print(f"    what: {t.get('what','')}")
+            print(f"    why:  {t.get('why','')}")
+            print(f"    predicate: {t.get('predicate','')}")
+            print(f"    owner: {t.get('owner','')}")
+    return 1 if any_orphan else 0
+
+
+def cmd_close(args: argparse.Namespace) -> int:
+    already_closed_at = None
+    try:
+        with core.locked_state() as data:
+            try:
+                t = core.find_thread(data, args.id)
+            except core.ThreadNotFoundError:
+                _fail(f"no such thread '{args.id}'")
+            if t.get("closed_at"):
+                already_closed_at = t["closed_at"]
+            else:
+                t["closed_at"] = core.iso(core.now_utc())
+                t["closed_reason"] = args.reason or ""
+    except core.CorruptStateError as e:
+        _fail(
+            f"state file is corrupt, refusing to touch it: {e}\n"
+            f"  Fix or move it by hand, then retry. (Never auto-reset — see "
+            f"lib/threads_core.py docstring.)"
+        )
+    except core.LockTimeoutError as e:
+        _fail(str(e))
+    if already_closed_at:
+        print(f"'{args.id}' is already closed (at {already_closed_at})")
+        return 0
+    print(f"closed '{args.id}'")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="threads", description="CogOS-harness threads registry")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    pa = sub.add_parser("add", help="register a new thread (a resolution predicate to watch)")
+    pa.add_argument("--what", required=True, help="one line: what is being waited on")
+    pa.add_argument("--why", required=True, help="one line: why it matters")
+    pa.add_argument("--predicate", required=True, help="bounded shell command; exit 0 == resolved")
+    pa.add_argument("--expected-by", required=True, help="ISO8601 timestamp, or a duration (2h/45m/1d/30s/1w)")
+    pa.add_argument("--owner", default=None, help="session/seat id; defaults to $COGOS_SESSION_ID or 'unknown'")
+    pa.add_argument("--id", default=None, help="explicit id; default: auto-slugged from --what")
+    pa.set_defaults(func=cmd_add)
+
+    pl = sub.add_parser("list", help="list threads")
+    pl.add_argument("--all", action="store_true", help="include closed threads")
+    pl.add_argument("--json", action="store_true", help="machine-readable output")
+    pl.set_defaults(func=cmd_list)
+
+    pc = sub.add_parser("check", help="run predicate(s) now and print derived status")
+    pc.add_argument("id", nargs="?", default=None, help="check one thread; default: all open threads")
+    pc.add_argument("--timeout", type=float, default=8.0, help="per-predicate timeout in seconds (default 8)")
+    pc.add_argument("--verbose", action="store_true")
+    pc.set_defaults(func=cmd_check)
+
+    pk = sub.add_parser("close", help="explicitly close a thread (declared action, distinct from resolution)")
+    pk.add_argument("id")
+    pk.add_argument("--reason", default=None)
+    pk.set_defaults(func=cmd_close)
+
+    return p
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

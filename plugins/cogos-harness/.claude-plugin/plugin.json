@@ -1,13 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cogos-harness",
-  "description": "Portable Claude Code membrane for a CogOS node: session-lifecycle hooks, kernel-vitals proprioception, a compaction bypass path, and the cogos-kernel MCP server. Degrades to a no-op wherever the kernel or a cog workspace is absent.",
-  "version": "0.2.0",
+  "description": "Portable Claude Code membrane for a CogOS node: session-lifecycle hooks, kernel-vitals proprioception, a compaction bypass path, a threads registry for open-ended waits, and the cogos-kernel MCP server. Degrades to a no-op wherever the kernel or a cog workspace is absent.",
+  "version": "0.3.0",
   "author": {
     "name": "myrgic"
   },
   "homepage": "https://github.com/myrgic/plugins",
   "repository": "https://github.com/myrgic/plugins",
   "license": "MIT",
-  "keywords": ["cogos", "kernel", "mcp", "hooks", "proprioception", "session-continuity"]
+  "keywords": ["cogos", "kernel", "mcp", "hooks", "proprioception", "session-continuity", "threads"]
 }

@@ -1,0 +1,71 @@
+# .cogpublic — Public release gate for myrgic/plugins
+# Defines what must never cross the boundary outward.
+#
+# ENFORCED BY: the org-level Public Release Gate workflow
+#   (myrgic/.github/.github/workflows/public-release-gate.yml), run in CI on
+#   every PR. Locally, from a checkout of myrgic/.github:
+#     python3 scripts/cogpublic-guard.py --root /path/to/plugins
+#
+# WHY THIS REPO HAS ONE: plugins ships skills and docs authored inside the
+# operator's environment — the highest-risk content class for path and
+# identity leaks (mod3 #138/#142/#146, cogos #588 were all docs/config
+# leaks). A dry-run of the cogos baseline on 2026-08-31 found ZERO hits
+# (81 files scanned).
+
+version: 1
+
+content_guards:
+  - pattern: "/Users/slowbro"
+    description: "Hardcoded operator home directory (macOS)"
+  - pattern: "/home/slowbro"
+    description: "Hardcoded operator home directory (Linux)"
+  - pattern: "-Users-slowbro-"
+    description: "Claude project path encoding"
+  - pattern: "192404964621025291"
+    description: "Personal Discord user snowflake"
+  - pattern: 'sk-[a-zA-Z0-9]{20,}'
+    description: "OpenAI API key pattern"
+  - pattern: 'ghp_[a-zA-Z0-9]{20,}'
+    description: "GitHub personal access token"
+  - pattern: 'xoxb-[a-zA-Z0-9]+'
+    description: "Slack bot token"
+  - pattern: '@gmail\.com|@yahoo\.com|@hotmail\.com'
+    description: "Personal email address (git author emails exempt)"
+
+# DELIBERATELY NOT GUARDED, verified 2026-08-31 — recorded so the next
+# person does not "helpfully" add them:
+#
+#   "slowbro" (bare handle) — appears in
+#     plugins/cogos-architecture/skills/corpus-cross-reference/resources/
+#     canonical-frontmatter-shapes.md (author-field schema examples, lines
+#     17/46/72/99) and in canary/run_canary.py:89 where it is the CANARY'S
+#     OWN DETECTION REGEX. The handle is the operator's public GitHub
+#     identity; guarding it would flag the schema docs and the detector
+#     that exists to catch real leaks of it.
+#
+#   "/Users/" (generic macOS path prefix) — canary/run_canary.py:88
+#     compiles r"/Users/[A-Za-z0-9_.-]+" as a detection pattern, and skill
+#     docs legitimately use /Users/example placeholders. Only the specific
+#     operator home (/Users/slowbro) is a leak; the prefix is not.
+#
+#   token-regex LITERALS in
+#     plugins/cogos-dev-tools/skills/zsh-environment/references/
+#     secret_patterns.md (lines 12/17) — these are documentation OF the
+#     patterns (character classes, not real tokens) and do not match the
+#     real-token guards above. No extra pattern needed; noted so nobody
+#     mistakes them for leaks during review.
+#
+# An over-broad guard that fires on legitimate content is worse than no
+# guard: it gets suppressed, and the suppression takes the real findings
+# with it.
+
+exclude:
+  - vendor/**
+  - node_modules/**
+  - .venv/**
+  - uv.lock
+  - package-lock.json
+  - "*.onnx"
+  - "*.pt"
+  - "*.safetensors"
+  - "*.gguf"

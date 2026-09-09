@@ -36,6 +36,18 @@ context-driven routing changes that is exactly right — the moment after a
 flip, the header marks it. Last-seen model is tracked per session_id
 alongside the elapsed-time state.
 
+Second line also carries a `use S24%·W18%` plan-usage segment when a usage
+cache is available — session (5h), weekly all-models, and weekly premium
+(Fable/Opus) percentages. Prefers the official harness rate_limits tee
+(rate_limits.json) over the ccusage peak-relative estimate caches
+(blocks.json / weekly.json), tagging the latter with `~` so it's never
+mistaken for ground truth. Escalates to a leading `⚠use ...` form at >=80%
+official usage. Every UserPromptSubmit turn also best-effort writes this
+reading to the cog observatory's claude-usage watermark
+(`$COGOS_WORKSPACE/.cog/state/watermarks/claude-usage.json`) so plan budget
+is an observed source there too — a pure side effect, never blocking or
+failing the segment itself. Cache-read only; never spawns ccusage.
+
 Third line (when available): the kernel-vitals segment, a pre-formatted
 one-liner written by kernel-vitals-probe.py (fired detached, below, when its
 cache goes stale) — kernel health, error/anomaly counts, release/PR status.
@@ -390,6 +402,282 @@ def _context_pct_seg(pct: float | None) -> str:
         return ""
 
 
+_USAGE_CACHE_DIR = Path.home() / ".claude" / "cache"
+_USAGE_BLOCKS = _USAGE_CACHE_DIR / "blocks.json"
+_USAGE_WEEKLY = _USAGE_CACHE_DIR / "weekly.json"
+# Official plan-relative usage, teed by statusline.sh from the harness's
+# .rate_limits stdin fields (five_hour/seven_day used_percentage + resets_at).
+# Ground truth — the same numbers the app's usage screen shows — PREFERRED
+# over the ccusage caches whenever fresh. The statusline renders constantly
+# while the operator works, so 30 min is a generous freshness window; past
+# it we assume the tee has gone cold and fall back to the estimate.
+_USAGE_RATE_LIMITS = _USAGE_CACHE_DIR / "rate_limits.json"
+_USAGE_OFFICIAL_TTL = 30 * 60
+# Same TTLs statusline.sh uses for these two caches (cached_call 180 / 600). A
+# cache older than this is treated as stale and the segment degrades to "".
+_USAGE_BLOCKS_TTL = 180
+_USAGE_WEEKLY_TTL = 600
+_USAGE_WARN_PCT = 80
+# Top-tier/premium models whose combined weekly share is surfaced as the
+# "fable" bucket. Matched by prefix so dated snapshots (e.g. a fable-5 rev)
+# still count. Extend here if a new premium tier ships.
+_USAGE_PREMIUM_PREFIXES = ("claude-fable-5", "claude-mythos", "claude-opus-4")
+
+
+def _read_json_cache_fresh(path: Path, ttl: int) -> dict | None:
+    """Read a JSON cache file iff it exists and is within ttl seconds old.
+    Cache-read only — never spawns ccusage or any subprocess. Never raises."""
+    try:
+        if not path.exists():
+            return None
+        age = datetime.now(timezone.utc).timestamp() - path.stat().st_mtime
+        if age > ttl:
+            return None
+        return json.loads(path.read_text() or "{}")
+    except Exception:
+        return None
+
+
+def _session_pct_from_cache() -> float | None:
+    """5h session-window usage %, from the same blocks.json cache statusline.sh
+    populates (ccusage peak-relative tokenLimitStatus.percentUsed). Cache-read
+    only; None on any miss/stale/corrupt condition. Never raises."""
+    try:
+        d = _read_json_cache_fresh(_USAGE_BLOCKS, _USAGE_BLOCKS_TTL)
+        if not d:
+            return None
+        blocks = d.get("blocks") or []
+        if not blocks:
+            return None
+        b = blocks[0]
+        if not b.get("isActive", True):
+            return None
+        pct = (b.get("tokenLimitStatus") or {}).get("percentUsed")
+        if pct is None:
+            return None
+        return max(0.0, float(pct))
+    except Exception:
+        return None
+
+
+def _weekly_pcts_from_cache() -> tuple[float | None, float | None]:
+    """(all-models weekly %, premium/fable+opus weekly %) from weekly.json —
+    the current week's total tokens against the peak historical week, same
+    peak-relative math statusline.sh uses for its fallback path. The premium
+    share is (fable+opus token total this week) / (peak week's ALL-model
+    total), i.e. the same denominator, so the two percentages are directly
+    comparable/stackable. Cache-read only. Never raises."""
+    try:
+        d = _read_json_cache_fresh(_USAGE_WEEKLY, _USAGE_WEEKLY_TTL)
+        if not d:
+            return None, None
+        weeks = d.get("weekly") or []
+        if not weeks:
+            return None, None
+
+        def _tot(w: dict) -> int:
+            return (int(w.get("inputTokens") or 0)
+                    + int(w.get("outputTokens") or 0)
+                    + int(w.get("cacheCreationTokens") or 0)
+                    + int(w.get("cacheReadTokens") or 0))
+
+        totals = [_tot(w) for w in weeks]
+        peak = max(totals) if totals else 0
+        if peak <= 0:
+            return None, None
+        cur = sorted(weeks, key=lambda w: w.get("week", ""))[-1]
+        cur_total = _tot(cur)
+        all_pct = cur_total * 100.0 / peak
+
+        premium_total = 0
+        for mb in cur.get("modelBreakdowns") or []:
+            name = str(mb.get("modelName") or "")
+            if any(name.startswith(p) for p in _USAGE_PREMIUM_PREFIXES):
+                premium_total += (int(mb.get("inputTokens") or 0)
+                                  + int(mb.get("outputTokens") or 0)
+                                  + int(mb.get("cacheCreationTokens") or 0)
+                                  + int(mb.get("cacheReadTokens") or 0))
+        premium_pct = premium_total * 100.0 / peak
+        return max(0.0, all_pct), max(0.0, premium_pct)
+    except Exception:
+        return None, None
+
+
+def _official_usage() -> dict | None:
+    """Read the official plan-relative usage teed by statusline.sh into
+    rate_limits.json. Freshness is judged on the embedded written_at (not
+    file mtime), TTL 30 min. Returns a fields dict with basis="official"
+    (resets_at values are unix epoch seconds when present), or None when the
+    file is missing/stale/corrupt so the caller falls back to the estimate.
+    Cache-read only. Never raises."""
+    try:
+        if not _USAGE_RATE_LIMITS.exists():
+            return None
+        d = json.loads(_USAGE_RATE_LIMITS.read_text() or "{}")
+        wa = str(d.get("written_at") or "")
+        if not wa:
+            return None
+        ts = datetime.fromisoformat(wa.replace("Z", "+00:00")).timestamp()
+        if datetime.now(timezone.utc).timestamp() - ts > _USAGE_OFFICIAL_TTL:
+            return None
+        rl = d.get("rate_limits") or {}
+        five = rl.get("five_hour") or {}
+        seven = rl.get("seven_day") or {}
+        # Per-model weekly bucket (Max plans expose an opus/premium weekly
+        # limit as its own rate_limits key on some harness versions).
+        opus = rl.get("seven_day_opus") or {}
+
+        def _pct(bucket: dict):
+            p = bucket.get("used_percentage")
+            return round(float(p)) if p is not None else None
+
+        def _resets(bucket: dict):
+            r = bucket.get("resets_at")
+            try:
+                return int(float(r)) if r is not None else None
+            except Exception:
+                return None
+
+        fields = {
+            "session_pct": _pct(five),
+            "weekly_pct": _pct(seven),
+            "fable_pct": _pct(opus),
+            "session_resets_at": _resets(five),
+            "weekly_resets_at": _resets(seven),
+            "fable_resets_at": _resets(opus),
+            "basis": "official",
+        }
+        if all(fields[k] is None for k in ("session_pct", "weekly_pct", "fable_pct")):
+            return None
+        return fields
+    except Exception:
+        return None
+
+
+def _usage_fields() -> dict:
+    """Compute the three usage buckets as a flat dict of rounded ints (or None
+    on miss), plus basis ("official" | "estimate") and resets_at epochs when
+    the official source carries them. Official (harness rate_limits teed by
+    statusline.sh) is preferred; ccusage peak-relative caches are the tagged
+    fallback. Single source of truth for the rendered segment, the JSON
+    output, and the watermark, so all three stay consistent. Never raises."""
+    empty = {"session_pct": None, "weekly_pct": None, "fable_pct": None,
+             "basis": "estimate"}
+    try:
+        official = _official_usage()
+        if official is not None:
+            return official
+        session_pct = _session_pct_from_cache()
+        weekly_pct, fable_pct = _weekly_pcts_from_cache()
+        return {
+            "session_pct": round(session_pct) if session_pct is not None else None,
+            "weekly_pct": round(weekly_pct) if weekly_pct is not None else None,
+            "fable_pct": round(fable_pct) if fable_pct is not None else None,
+            "basis": "estimate",
+        }
+    except Exception:
+        return empty
+
+
+def _fmt_reset(epoch, now_ts: float) -> str:
+    """`→XhYYm` until the given reset epoch; "" when absent/past/invalid.
+    Never raises."""
+    try:
+        if epoch is None:
+            return ""
+        rem = int(float(epoch) - now_ts)
+        if rem <= 0:
+            return ""
+        h, m = divmod(rem // 60, 60)
+        return f"→{h}h{m:02d}m" if h else f"→{m}m"
+    except Exception:
+        return ""
+
+
+def _usage_seg(fields: dict) -> str:
+    """Render the compact plan-usage segment. Foveated idiom, two sources:
+
+      official (harness rate_limits, = the app's usage screen) — clean form:
+        `use S24%·W18%`            (+`·F25%` when a premium bucket exists)
+      estimate (ccusage peak-relative fallback) — tilde-tagged so nobody
+      mistakes it for ground truth:
+        `use ~S187%·W44%·F19%`
+
+    S = 5h session window, W = weekly all-models, F = weekly Fable/Opus.
+    Escalates to a leading ⚠ form the instant ANY tracked bucket is >=80%,
+    leading with the worst bucket; the official alarm appends that bucket's
+    reset time (`⚠use S82%→1h10m`), the estimate alarm keeps the tilde and
+    has no reset (ccusage caches don't carry one): `⚠use ~S187%`.
+
+    Absent buckets are omitted; a fully empty result (all caches
+    missing/stale) returns "" and the header renders exactly as it did
+    before this segment existed (fail-open). Never raises.
+    """
+    try:
+        s, w, f = fields.get("session_pct"), fields.get("weekly_pct"), fields.get("fable_pct")
+        if s is None and w is None and f is None:
+            return ""
+
+        official = fields.get("basis") == "official"
+        tilde = "" if official else "~"
+        # Peak-relative estimates systematically overstate plan usage for any
+        # operator whose peak week never hit the plan ceiling (observed
+        # 2026-07-05: estimate said W93% while the official panel read 51%).
+        # Alarm ONLY on official data; estimates render informationally with
+        # an explicit basis tag so they are never mistaken for plan-relative.
+        alarm = official and any(v is not None and v >= _USAGE_WARN_PCT for v in (s, w, f))
+
+        if alarm:
+            # Lead with whichever tracked bucket is worst; append its reset
+            # time only when the official source carries it.
+            candidates = [(s, "S", "session_resets_at"),
+                          (w, "W", "weekly_resets_at"),
+                          (f, "F", "fable_resets_at")]
+            val, tag, rkey = max(
+                (v, t, k) for v, t, k in candidates if v is not None
+            )
+            reset = ""
+            if official:
+                now_ts = datetime.now(timezone.utc).timestamp()
+                reset = _fmt_reset(fields.get(rkey), now_ts)
+            return f"⚠use {tilde}{tag}{val}%{reset}"
+
+        parts = []
+        if s is not None:
+            parts.append(f"S{s}%")
+        if w is not None:
+            parts.append(f"W{w}%")
+        if f is not None:
+            parts.append(f"F{f}%")
+        basis_tag = "" if official else " (peak-est; official unavailable)"
+        return f"use {tilde}" + "·".join(parts) + basis_tag
+    except Exception:
+        return ""
+
+
+def _write_usage_watermark(fields: dict) -> None:
+    """Best-effort watermark write so the observatory sees plan-budget as an
+    observed source alongside disk/etc. Never blocks the hook and never
+    raises — a failed write just means the watermark is stale, not that the
+    header segment fails."""
+    try:
+        base = Path(
+            os.environ.get("COGOS_WORKSPACE", str(Path.home() / "workspaces" / "cog"))
+        ) / ".cog" / "state" / "watermarks"
+        base.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "source": "claude-usage",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "session_pct": fields.get("session_pct"),
+            "weekly_pct": fields.get("weekly_pct"),
+            "fable_pct": fields.get("fable_pct"),
+            "basis": fields.get("basis"),
+        }
+        (base / "claude-usage.json").write_text(json.dumps(payload))
+    except Exception:
+        pass
+
+
 _KERNEL_VITALS = _DATA_DIR / ".kernel-vitals.json"
 _KERNEL_VITALS_PROBE = _PLUGIN_ROOT / "hooks" / "kernel-vitals-probe.py"
 _KERNEL_VITALS_TTL = 90  # refresh the out-of-band vitals probe at most this often
@@ -522,7 +810,10 @@ def main() -> int:
     model_seg = _model_segment(session_id, transcript_path)
     context_pct = _context_pct_value(data, transcript_path)
     ctx_seg = _context_pct_seg(context_pct)
-    second_parts = [p for p in (temporal, model_seg, ctx_seg) if p]
+    usage_fields = _usage_fields()
+    usage_seg = _usage_seg(usage_fields)
+    _write_usage_watermark(usage_fields)
+    second_parts = [p for p in (temporal, model_seg, ctx_seg, usage_seg) if p]
     if second_parts:
         lines.append("  " + " | ".join(second_parts))
     vit = _read_kernel_vitals()
@@ -538,6 +829,9 @@ def main() -> int:
             "hookEventName": event_name,
             "additionalContext": context,
         },
+        "session_pct": usage_fields.get("session_pct"),
+        "weekly_pct": usage_fields.get("weekly_pct"),
+        "fable_pct": usage_fields.get("fable_pct"),
     }
     json.dump(out, sys.stdout)
     return 0

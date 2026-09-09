@@ -378,6 +378,22 @@ def _self_update_cfg() -> dict:
     return out
 
 
+def _join_truncated(items: list[str], limit: int) -> str:
+    """Comma-join whole items up to `limit` chars, never a partial item.
+    Was `",".join(items)[:24]`, which truncates the JOINED string and can
+    slice a kind name mid-word (observed: "over_budget,quarantined" -> "qua").
+    Stops BEFORE any item that would blow the budget instead."""
+    out: list[str] = []
+    length = 0
+    for item in items:
+        add = len(item) + (1 if out else 0)  # +1 for the joining comma
+        if length + add > limit:
+            break
+        out.append(item)
+        length += add
+    return ",".join(out)
+
+
 def _format_line(vit: dict) -> str:
     """The single source of truth for the vitals one-liner. Both the
     proprioception hook and a statusline (if any) read vit["line"] — neither
@@ -389,7 +405,7 @@ def _format_line(vit: dict) -> str:
     errs, anoms = log.get("errors", 0), log.get("anomalies", 0)
     e = f"⚠{errs}err" if errs else "0err"
     if anoms:
-        kinds = ",".join(log.get("anomaly_kinds", []))[:24]
+        kinds = _join_truncated(log.get("anomaly_kinds", []), 24)
         a = f"⚠{anoms}anom" + (f"({kinds})" if kinds else "")
         win = log.get("window", "")
         if win and win != "boot":

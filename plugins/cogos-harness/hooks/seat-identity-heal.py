@@ -39,6 +39,39 @@ IDENTITY_PATH = Path.home() / ".cog" / "status" / "seat-identity.json"
 KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 TIMEOUT = 1.0  # seconds; localhost-only call, kept short per the hook budget
+GRANT_TIMEOUT = 1.0
+
+# v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
+# process and cached: vault file first, loopback grants/current GET as
+# fallback. Any acquisition failure means "proceed without the header" --
+# fail-open, matching this hook's own silent-no-op contract. A broken vault
+# must never break the heal; the 401 that follows routes to the existing
+# fallback additionalContext exactly as a kernel-down response would.
+_GRANT_CACHE: dict = {"tried": False, "token": None}
+
+
+def _get_grant() -> str | None:
+    if _GRANT_CACHE["tried"]:
+        return _GRANT_CACHE["token"]
+    _GRANT_CACHE["tried"] = True
+    token = None
+    try:
+        raw = (Path.home() / ".cog" / "vault" / "node-root-grant").read_text(encoding="utf-8")
+        token = raw.strip() or None
+    except Exception:
+        token = None
+    if not token:
+        try:
+            with urllib.request.urlopen(
+                f"{KERNEL_URL}/v1/identity/grants/current?surface=node-root",
+                timeout=GRANT_TIMEOUT,
+            ) as r:
+                if r.status == 200:
+                    token = (json.loads(r.read()).get("token")) or None
+        except Exception:
+            token = None
+    _GRANT_CACHE["token"] = token
+    return token
 
 
 def _load_identity() -> dict | None:
@@ -69,10 +102,14 @@ def _register(identity: dict) -> dict | None:
     }
     if identity.get("hostname"):
         body["hostname"] = identity["hostname"]
+    headers = {"Content-Type": "application/json"}
+    grant = _get_grant()
+    if grant:
+        headers["X-Cogos-Grant"] = grant
     req = urllib.request.Request(
         f"{KERNEL_URL}/v1/sessions/register",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

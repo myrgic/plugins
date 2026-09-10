@@ -661,9 +661,20 @@ def _write_usage_watermark(fields: dict) -> None:
     raises — a failed write just means the watermark is stale, not that the
     header segment fails."""
     try:
-        base = Path(
+        ws = Path(
             os.environ.get("COGOS_WORKSPACE", str(Path.home() / "workspaces" / "cog"))
-        ) / ".cog" / "state" / "watermarks"
+        )
+        if not (ws / ".cog").is_dir():
+            # Never fabricate a cog workspace on a machine that has none —
+            # sibling hooks detect "cog workspace present" via this exact
+            # (workspace / ".cog").is_dir() predicate (see
+            # kernel-vitals-probe.py::_write_disk_watermark), so an
+            # unconditional mkdir here would manufacture that condition and
+            # cause every other hook to believe a substrate exists where it
+            # doesn't. This is the membrane canary's no_fabricated_cog_workspace
+            # check.
+            return
+        base = ws / ".cog" / "state" / "watermarks"
         base.mkdir(parents=True, exist_ok=True)
         payload = {
             "source": "claude-usage",

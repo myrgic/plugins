@@ -39,14 +39,18 @@ IDENTITY_PATH = Path.home() / ".cog" / "status" / "seat-identity.json"
 KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 TIMEOUT = 1.0  # seconds; localhost-only call, kept short per the hook budget
-GRANT_TIMEOUT = 1.0
 
 # v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
-# process and cached: vault file first, loopback grants/current GET as
-# fallback. Any acquisition failure means "proceed without the header" --
-# fail-open, matching this hook's own silent-no-op contract. A broken vault
-# must never break the heal; the 401 that follows routes to the existing
-# fallback additionalContext exactly as a kernel-down response would.
+# process and cached: the vault file is the ONLY no-credential source. There
+# used to be a loopback grants/current GET fallback here for a client that
+# couldn't read the vault -- ledger L03 (myrgic/cogos#605, 2026-09-06) put
+# all of /v1/identity/* behind this same grant gate, including reads, so
+# that GET now 401s on every call and could never have bootstrapped a
+# credential (board task 182). Removed. Any acquisition failure (missing or
+# unreadable vault) means "proceed without the header" -- fail-open,
+# matching this hook's own silent-no-op contract. A broken vault must never
+# break the heal; the 401 that follows routes to the existing fallback
+# additionalContext exactly as a kernel-down response would.
 _GRANT_CACHE: dict = {"tried": False, "token": None}
 
 
@@ -60,16 +64,6 @@ def _get_grant() -> str | None:
         token = raw.strip() or None
     except Exception:
         token = None
-    if not token:
-        try:
-            with urllib.request.urlopen(
-                f"{KERNEL_URL}/v1/identity/grants/current?surface=node-root",
-                timeout=GRANT_TIMEOUT,
-            ) as r:
-                if r.status == 200:
-                    token = (json.loads(r.read()).get("token")) or None
-        except Exception:
-            token = None
     _GRANT_CACHE["token"] = token
     return token
 

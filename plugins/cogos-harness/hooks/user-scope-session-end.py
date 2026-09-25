@@ -39,15 +39,18 @@ KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 PROBE_TIMEOUT = 1.0
 END_TIMEOUT = 1.5
-GRANT_TIMEOUT = 1.0
 
 # v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
-# process and cached: vault file first, loopback grants/current GET as
-# fallback. Any acquisition failure means "proceed without the header" --
-# fail-open, same contract as the rest of this hook. A broken vault must
-# never break session-end; the 401 that follows lands in the existing
-# fire-and-forget error handling exactly as it did before this header
-# existed.
+# process and cached: the vault file is the ONLY no-credential source. There
+# used to be a loopback grants/current GET fallback here for a client that
+# couldn't read the vault -- ledger L03 (myrgic/cogos#605, 2026-09-06) put
+# all of /v1/identity/* behind this same grant gate, including reads, so
+# that GET now 401s on every call and could never have bootstrapped a
+# credential (board task 182). Removed. Any acquisition failure (missing or
+# unreadable vault) means "proceed without the header" -- fail-open, same
+# contract as the rest of this hook. A broken vault must never break
+# session-end; the 401 that follows lands in the existing fire-and-forget
+# error handling exactly as it did before this header existed.
 _GRANT_CACHE: dict = {"tried": False, "token": None}
 
 
@@ -61,16 +64,6 @@ def _get_grant() -> str | None:
         token = raw.strip() or None
     except Exception:
         token = None
-    if not token:
-        try:
-            with urllib.request.urlopen(
-                f"{KERNEL_URL}/v1/identity/grants/current?surface=node-root",
-                timeout=GRANT_TIMEOUT,
-            ) as r:
-                if r.status == 200:
-                    token = (json.loads(r.read()).get("token")) or None
-        except Exception:
-            token = None
     _GRANT_CACHE["token"] = token
     return token
 

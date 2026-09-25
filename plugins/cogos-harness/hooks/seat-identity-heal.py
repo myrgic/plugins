@@ -40,6 +40,33 @@ KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
     f"http://127.0.0.1:{os.environ.get('COGOS_KERNEL_PORT', '6931')}"
 TIMEOUT = 1.0  # seconds; localhost-only call, kept short per the hook budget
 
+# v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
+# process and cached: the vault file is the ONLY no-credential source. There
+# used to be a loopback grants/current GET fallback here for a client that
+# couldn't read the vault -- ledger L03 (myrgic/cogos#605, 2026-09-06) put
+# all of /v1/identity/* behind this same grant gate, including reads, so
+# that GET now 401s on every call and could never have bootstrapped a
+# credential (board task 182). Removed. Any acquisition failure (missing or
+# unreadable vault) means "proceed without the header" -- fail-open,
+# matching this hook's own silent-no-op contract. A broken vault must never
+# break the heal; the 401 that follows routes to the existing fallback
+# additionalContext exactly as a kernel-down response would.
+_GRANT_CACHE: dict = {"tried": False, "token": None}
+
+
+def _get_grant() -> str | None:
+    if _GRANT_CACHE["tried"]:
+        return _GRANT_CACHE["token"]
+    _GRANT_CACHE["tried"] = True
+    token = None
+    try:
+        raw = (Path.home() / ".cog" / "vault" / "node-root-grant").read_text(encoding="utf-8")
+        token = raw.strip() or None
+    except Exception:
+        token = None
+    _GRANT_CACHE["token"] = token
+    return token
+
 
 def _load_identity() -> dict | None:
     """Read + validate the durable identity file. Returns None on any
@@ -69,10 +96,14 @@ def _register(identity: dict) -> dict | None:
     }
     if identity.get("hostname"):
         body["hostname"] = identity["hostname"]
+    headers = {"Content-Type": "application/json"}
+    grant = _get_grant()
+    if grant:
+        headers["X-Cogos-Grant"] = grant
     req = urllib.request.Request(
         f"{KERNEL_URL}/v1/sessions/register",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

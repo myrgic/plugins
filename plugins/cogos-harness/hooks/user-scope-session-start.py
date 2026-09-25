@@ -68,6 +68,33 @@ KERNEL_URL = os.environ.get("COGOS_KERNEL_URL") or \
 PROBE_TIMEOUT = 1.0  # short, bounded probe -- never block the hook budget
 REGISTER_TIMEOUT = 1.5
 
+# v0.16.29: kernel writes require an X-Cogos-Grant header. Resolved once per
+# process and cached: the vault file is the ONLY no-credential source. There
+# used to be a loopback grants/current GET fallback here for a client that
+# couldn't read the vault -- ledger L03 (myrgic/cogos#605, 2026-09-06) put
+# all of /v1/identity/* behind this same grant gate, including reads, so
+# that GET now 401s on every call and could never have bootstrapped a
+# credential (board task 182). Removed. Any acquisition failure (missing or
+# unreadable vault) means "proceed without the header" -- fail-open, same
+# contract as the rest of this hook. A broken vault must never break
+# registration; the 401 that follows lands in the existing fire-and-forget
+# error handling exactly as it did before this header existed.
+_GRANT_CACHE: dict = {"tried": False, "token": None}
+
+
+def _get_grant() -> str | None:
+    if _GRANT_CACHE["tried"]:
+        return _GRANT_CACHE["token"]
+    _GRANT_CACHE["tried"] = True
+    token = None
+    try:
+        raw = (Path.home() / ".cog" / "vault" / "node-root-grant").read_text(encoding="utf-8")
+        token = raw.strip() or None
+    except Exception:
+        token = None
+    _GRANT_CACHE["token"] = token
+    return token
+
 
 def _find_cog_workspace() -> Path | None:
     """Return the cog workspace root if it exists and has .cog/."""
@@ -196,10 +223,14 @@ def _register_direct(session_id: str, workspace: str, source: str = "") -> None:
         "hostname": socket.gethostname(),
         "extras": {"source": source or "startup", "via": "cogos-harness"},
     }
+    headers = {"Content-Type": "application/json"}
+    grant = _get_grant()
+    if grant:
+        headers["X-Cogos-Grant"] = grant
     req = urllib.request.Request(
         f"{KERNEL_URL}/v1/sessions/register",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

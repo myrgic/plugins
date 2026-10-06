@@ -1,0 +1,22 @@
+{
+  "//": "Typecheck: tsc -p plugins/cogos-harness/tsconfig.json --noEmit. Types: types/vendor/ (written by Claude Code 2.1.292; refresh per types/vendor/README.md).",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+    "typeRoots": ["./types/vendor"],
+    "types": ["claude-code", "claude-code-tools"]
+  },
+  "include": ["hooks/*.mjs", "mods", "lib/*.mjs", "tests", "types/index.d.ts"]
+}

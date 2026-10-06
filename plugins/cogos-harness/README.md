@@ -70,6 +70,79 @@ a good predicate, how to close). `pull-context-dispatch` is **not**
 duplicated here — it already ships in this marketplace's `cogos-workflow`
 package; install that alongside this plugin if you want it too.
 
+## Mods (0.4.0): one function-hooks module, five mods
+
+Alongside the shell hooks above (which all keep running unchanged: `hooks.json`
+carries both `"hooks"` and `"modules"`), 0.4.0 adds Claude Code **mods**
+(function hooks, Claude Code >= 2.1.287). In 0.4.0 they are **stubs**: they
+load, register, and do nothing.
+
+| Mod | File | Hooks (stub) | Brief |
+|---|---|---|---|
+| cog-redact | `mods/cog-redact.mjs` | `tool.call`, `prompt.submit` | secrets out before the model reads them |
+| cog-guard | `mods/cog-guard.mjs` | `tool.call` | one permission mod for every gate |
+| cog-context | `mods/cog-context.mjs` | `prompt.context` | one in-process context injector |
+| cog-status | `mods/cog-status.mjs` | `session.measure` | status band + the vitals-cache owner |
+| cog-receipt | `mods/cog-receipt.mjs` | `tool.call`, `turn.complete` | turn receipts to the stage and the bus |
+
+**Off by default.** Each mod reads its mode from `~/.cog/conf/harness-mods.json`
+(override path: `COGOS_HARNESS_MODS_CONF`):
+
+```json
+{ "version": 1, "mods": { "redact": "off", "guard": "off", "context": "off", "status": "off", "receipt": "off" } }
+```
+
+`off` = the hook is `next(e)` after one cached config read; `shadow` = runs and
+logs (`hook: "mod/<name>/<event>"`, `shadow: true`) to
+`~/.cog/run/hook-health.jsonl` but changes nothing; `on` = in effect. A missing
+or malformed file means every mod is off.
+
+**Layout.**
+
+```
+hooks/index.mjs      the ONE hooks module: calls each mod's register(on, options) in order
+mods/cog-*.mjs       one file per mod (each owns only its file + tests/<name>.test.ts + its types block)
+lib/cfg.mjs          shared config loader (off/shadow/on; missing file = all off)
+lib/order.mjs        the typed order: redact → guard → context → status → receipt
+lib/cache.mjs        shared vitals cache read/write with age (writer: cog-status)
+lib/ledger.mjs       hook-health ledger rows (append via process.run, never rewrite)
+lib/kernel.mjs       kernel fetch with X-Cogos-Grant
+lib/stub.mjs         the skeleton's no-op body
+types/index.d.ts     PluginState contract, one block per mod
+types/vendor/        Claude Code's own mod types (2.1.292), for tsc
+tests/*.test.ts      one file per mod + order.test.ts + lib.test.ts
+```
+
+**Engine rules the layout follows** (each measured with `claude plugin
+validate` on 2.1.292):
+
+- One plugin lists one hooks module, so `hooks/index.mjs` composes the mods.
+- One plugin may not register the same event twice without a matcher, so
+  every mod hook carries one (`{}` matches everything).
+- `$` is followed only into functions declared in the same file, never across
+  an import. So `lib/` functions take an `io` adapter, and each mod builds it
+  from `$` with its own same-file `ioOf($)`. The base keys are identical in all five.
+- Hooks nest in registration order, first outermost. `redact` therefore sees a
+  tool call before `guard` (plan §3.2), and `tests/order.test.ts` checks this
+  on the real chain.
+
+### Build and test: one command for every mod agent
+
+From the repo root:
+
+```bash
+claude plugin validate plugins/cogos-harness \
+  && claude plugin test plugins/cogos-harness \
+  && npx -y -p typescript@5 tsc -p plugins/cogos-harness/tsconfig.json --noEmit
+```
+
+All three must pass before a mod PR is opened. A mod PR touches only
+`mods/<name>.mjs`, `tests/<name>.test.ts` and its own block in
+`types/index.d.ts`. `hooks/index.mjs`, `lib/cfg.mjs`, `lib/order.mjs` and the
+`ioOf` base keys are shared; change them through a separate one-line PR. The
+exceptions: cog-redact owns the order block and `lib/order.mjs`, and
+cog-status owns `lib/cache.mjs`.
+
 ## What's excluded, and why
 
 - **`dispatch-model-probe.py`** — audited as a "by-reference companion" to

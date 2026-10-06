@@ -78,7 +78,7 @@
             "name": "cogos-harness",
             "source": "./plugins/cogos-harness",
             "description": "Portable Claude Code membrane for a CogOS node: session-lifecycle hooks, kernel-vitals proprioception, a compaction bypass path, a threads registry for open-ended waits, and the cogos-kernel MCP server. Degrades to a no-op wherever the kernel or a cog workspace is absent.",
-            "version": "0.3.0",
+            "version": "0.4.0",
             "category": "development",
             "keywords": ["cogos", "kernel", "mcp", "hooks", "proprioception", "session-continuity", "threads"],
             "homepage": "https://github.com/myrgic/plugins"

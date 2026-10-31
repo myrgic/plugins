@@ -1,152 +1,157 @@
 {
-    "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-    "name": "plugins",
-    "description": "Skills, harness plugins, and modality integrations for CogOS \u2014 the cognitive operating system for AI development",
-    "owner": {
-        "name": "myrgic",
-        "email": "myrgic@users.noreply.github.com"
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "plugins",
+  "description": "Skills, harness plugins, and modality integrations for CogOS \u2014 the cognitive operating system for AI development",
+  "owner": {
+    "name": "myrgic",
+    "email": "myrgic@users.noreply.github.com"
+  },
+  "metadata": {
+    "version": "0.3.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "cogos-workflow",
+      "source": "./plugins/cogos-workflow",
+      "description": "Phased planning, execution, critical review, agent-dispatch, and session-continuity skills for complex multi-step development tasks",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "planning",
+        "execution",
+        "review",
+        "multi-agent",
+        "dispatch",
+        "session-continuity"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
     },
-    "metadata": {
-        "version": "0.3.0",
-        "pluginRoot": "./plugins"
+    {
+      "name": "cogos-substrate",
+      "source": "./plugins/cogos-substrate",
+      "description": "Substrate archaeology \u2014 finding and trusting prior work in a CogOS/Myrgic substrate before building new things",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "cogos",
+        "myrgic",
+        "substrate",
+        "archaeology",
+        "research"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
     },
-    "plugins": [
-        {
-            "name": "cogos-workflow",
-            "source": "./plugins/cogos-workflow",
-            "description": "Phased planning, execution, critical review, agent-dispatch, and session-continuity skills for complex multi-step development tasks",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "planning",
-                "execution",
-                "review",
-                "multi-agent",
-                "dispatch",
-                "session-continuity"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "cogos-substrate",
-            "source": "./plugins/cogos-substrate",
-            "description": "Substrate archaeology \u2014 finding and trusting prior work in a CogOS/Myrgic substrate before building new things",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "cogos",
-                "myrgic",
-                "substrate",
-                "archaeology",
-                "research"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "cogos-voice",
-            "source": "./plugins/cogos-voice",
-            "description": "Voice modality integration via Mod\u00b3 \u2014 dual-channel protocol for conversational AI development",
-            "version": "0.1.0",
-            "category": "productivity",
-            "keywords": [
-                "voice",
-                "tts",
-                "modality",
-                "mod3"
-            ],
-            "homepage": "https://github.com/myrgic/mod3"
-        },
-        {
-            "name": "cogos-research",
-            "source": "./plugins/cogos-research",
-            "description": "Structured research skills \u2014 literature review, experiment design, and interdisciplinary synthesis",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "research",
-                "literature",
-                "experiments",
-                "synthesis"
-            ],
-            "homepage": "https://github.com/myrgic/research"
-        },
-        {
-            "name": "cogos-dev-tools",
-            "source": "./plugins/cogos-dev-tools",
-            "description": "Development methodology and tooling skills \u2014 code quality, systems architecture, technical writing, git forensics, shell and storage management, and cross-model CLI tooling",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "code-quality",
-                "architecture",
-                "documentation",
-                "git",
-                "shell",
-                "storage",
-                "cli-tools"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "cogos-architecture",
-            "source": "./plugins/cogos-architecture",
-            "description": "CogOS architecture corpus hygiene \u2014 cross-check proposed RFCs/ADRs against the existing substrate corpus",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "architecture",
-                "adr",
-                "rfc",
-                "corpus",
-                "review"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "myrgic-org",
-            "source": "./plugins/myrgic-org",
-            "description": "Org-management skills for the myrgic GitHub org: PR triage, issue triage. Read-only by default.",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "github",
-                "org-management",
-                "triage",
-                "gh-cli"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "cogos-harness",
-            "source": "./plugins/cogos-harness",
-            "description": "Portable Claude Code membrane for a CogOS node: session-lifecycle hooks, kernel-vitals proprioception, a compaction bypass path, and the cogos-kernel MCP server. Degrades to a no-op wherever the kernel or a cog workspace is absent.",
-            "version": "0.2.0",
-            "category": "development",
-            "keywords": [
-                "cogos",
-                "kernel",
-                "mcp",
-                "hooks",
-                "proprioception",
-                "session-continuity"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        },
-        {
-            "name": "cogos-onboard",
-            "source": "./plugins/cogos-onboard",
-            "description": "Install a user-tier CogOS node and seed it from the operator's OWN claude.ai history, then mint their agent (e.g. Wingnut) from that history. Generic method \u2014 nothing operator-specific ships.",
-            "version": "0.1.0",
-            "category": "development",
-            "keywords": [
-                "cogos",
-                "onboarding",
-                "bootstrap",
-                "observatory",
-                "harvest",
-                "agent"
-            ],
-            "homepage": "https://github.com/myrgic/plugins"
-        }
-    ]
+    {
+      "name": "cogos-voice",
+      "source": "./plugins/cogos-voice",
+      "description": "Voice modality integration via Mod\u00b3 \u2014 dual-channel protocol for conversational AI development",
+      "version": "0.1.0",
+      "category": "productivity",
+      "keywords": [
+        "voice",
+        "tts",
+        "modality",
+        "mod3"
+      ],
+      "homepage": "https://github.com/myrgic/mod3"
+    },
+    {
+      "name": "cogos-research",
+      "source": "./plugins/cogos-research",
+      "description": "Structured research skills \u2014 literature review, experiment design, and interdisciplinary synthesis",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "research",
+        "literature",
+        "experiments",
+        "synthesis"
+      ],
+      "homepage": "https://github.com/myrgic/research"
+    },
+    {
+      "name": "cogos-dev-tools",
+      "source": "./plugins/cogos-dev-tools",
+      "description": "Development methodology and tooling skills \u2014 code quality, systems architecture, technical writing, git forensics, shell and storage management, and cross-model CLI tooling",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "code-quality",
+        "architecture",
+        "documentation",
+        "git",
+        "shell",
+        "storage",
+        "cli-tools"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
+    },
+    {
+      "name": "cogos-architecture",
+      "source": "./plugins/cogos-architecture",
+      "description": "CogOS architecture corpus hygiene \u2014 cross-check proposed RFCs/ADRs against the existing substrate corpus",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "architecture",
+        "adr",
+        "rfc",
+        "corpus",
+        "review"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
+    },
+    {
+      "name": "myrgic-org",
+      "source": "./plugins/myrgic-org",
+      "description": "Org-management skills for the myrgic GitHub org: PR triage, issue triage. Read-only by default.",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "github",
+        "org-management",
+        "triage",
+        "gh-cli"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
+    },
+    {
+      "name": "cogos-harness",
+      "source": "./plugins/cogos-harness",
+      "description": "Portable Claude Code membrane for a CogOS node: session-lifecycle hooks, kernel-vitals proprioception, a compaction bypass path, and the cogos-kernel MCP server. Degrades to a no-op wherever the kernel or a cog workspace is absent.",
+      "version": "0.2.0",
+      "category": "development",
+      "keywords": [
+        "cogos",
+        "kernel",
+        "mcp",
+        "hooks",
+        "proprioception",
+        "session-continuity"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
+    },
+    {
+      "name": "cogos-onboard",
+      "source": "./plugins/cogos-onboard",
+      "description": "Install a user-tier CogOS node and seed it from the operator's OWN claude.ai history, then mint their agent (e.g. Wingnut) from that history. Generic method \u2014 nothing operator-specific ships.",
+      "version": "0.1.0",
+      "category": "development",
+      "keywords": [
+        "cogos",
+        "onboarding",
+        "bootstrap",
+        "observatory",
+        "harvest",
+        "agent"
+      ],
+      "homepage": "https://github.com/myrgic/plugins"
+    },
+    {
+      "name": "cogos-cloud-node",
+      "source": "./plugins/cogos-cloud-node",
+      "description": "Stand up a CogOS node in a Claude Code Cloud environment from your phone. Ships method only."
+    }
+  ]
 }

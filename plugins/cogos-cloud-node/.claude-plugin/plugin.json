@@ -1,0 +1,10 @@
+{
+  "name": "cogos-cloud-node",
+  "description": "Stand up a CogOS node in a Claude Code Cloud environment from your phone: fork the operator-template repo, attach it to a Cloud env, seed your own history from a claude.ai data export. Ships method only \u2014 no operator data.",
+  "version": "0.1.0",
+  "author": { "name": "myrgic" },
+  "homepage": "https://github.com/myrgic/plugins",
+  "repository": "https://github.com/myrgic/plugins",
+  "license": "MIT",
+  "keywords": ["cogos", "cloud", "node", "onboarding", "bootstrap", "phone"]
+}

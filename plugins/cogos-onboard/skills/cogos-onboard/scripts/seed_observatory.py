@@ -4,7 +4,7 @@
 Usage: seed_observatory.py <export.json> <out_dir>
 
 Writes one index file in the observatory's `<source>__<session>.json` shape (a JSON array of turn
-records), source `wingnut-share`, each turn carrying refs.stable_id — so the operator's Cog can
+records), source `claude-web`, each turn carrying refs.stable_id — so the operator's Cog can
 retrieve the shared history from turn one. Additive: writes a new source file, never prunes.
 """
 import hashlib
@@ -29,7 +29,7 @@ def main():
     src_url = data.get("source_url", "")
     session = "".join(c for c in src_url.split("/")[-1] if c.isalnum())[:24] or \
         hashlib.sha256(export_path.encode()).hexdigest()[:16]
-    source = "wingnut-share"
+    source = "claude-web"
 
     role_map = {"human": "user", "assistant": "assistant"}
     records = []
@@ -47,7 +47,7 @@ def main():
             "source": source,
             "text": text,
             "timestamp": None,          # the export carries no per-turn timestamps
-            "session_title": data.get("subject", "Wingnut × Vroku — Oracles build"),
+            "session_title": data.get("subject", "My session history"),
         })
 
     os.makedirs(out_dir, exist_ok=True)

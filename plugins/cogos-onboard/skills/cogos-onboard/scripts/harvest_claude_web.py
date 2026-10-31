@@ -5,7 +5,7 @@ Drives a browser YOU are logged into to claude.ai over the Chrome DevTools Proto
 runs the claude.ai web API from inside that tab (so your cookies ride along and Cloudflare
 passes), and normalizes every conversation into:
 
-  <out>/conversations/<uuid>.json   per-conversation record, shaped like the Wingnut export
+  <out>/conversations/<uuid>.json   per-conversation record, shaped like the conversation seed consumed by seed_observatory.py / seed_room.py
                                     ({source_url, subject, turns:[{role,text,ts}]}) so
                                     seed_observatory.py / seed_room.py can consume it directly
   <out>/observatory/claude-web__<session>.json
@@ -406,7 +406,7 @@ def main(argv=None):
     ap.add_argument("--count-only", action="store_true",
                     help="list conversations per org and stop (no message fetch)")
     ap.add_argument("--no-rooms", action="store_true", help="skip stage-room seed output")
-    ap.add_argument("--owner", default="vroku", help="room owner id (default vroku)")
+    ap.add_argument("--owner", default="operator", help="room owner id (default: operator)")
     ap.add_argument("--agent", default="identity_operator",
                     help="agent id seeded into rooms (default identity_operator)")
     ap.add_argument("--page-size", type=int, default=50, help="conversation list page size")

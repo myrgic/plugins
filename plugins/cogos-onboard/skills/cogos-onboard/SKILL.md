@@ -1,19 +1,19 @@
 ---
-name: cogos-onboard-wingnut
+name: cogos-onboard
 description: "Use on an operator's machine to set up a CogOS node and seed it from THEIR OWN claude.ai history. Triggers: 'set up CogOS for me', 'install my cog node', 'onboard me'."
 version: 0.2.0
 author: cog
-license: proprietary
+license: MIT
 metadata:
   hermes:
-    tags: [cogos, onboarding, bootstrap, observatory, seed, wingnut, harvest]
+    tags: [cogos, onboarding, bootstrap, observatory, seed, harvest, agent]
 ---
 
 # CogOS onboarding — install a node, seed it from the operator's OWN history
 
 ## When to use
 
-A fresh Claude Code on the **operator's own machine** (e.g. Vroku's), pointed here to set them up as a
+A fresh Claude Code on the **operator's own machine** (their own, not a shared one), pointed here to set them up as a
 CogOS operator. You (the agent) *are* the installer — this skill is the procedure you run.
 
 **The delivery principle: this plugin ships METHOD, not anyone's data.** The operator's conversation
@@ -81,7 +81,7 @@ Hand off to the **`agent-from-history`** skill: point it at the just-seeded sess
 counterpart they worked with, e.g. "Wingnut"). It reads *their* turns from the observatory, derives
 how they work and how they work with that agent, and writes an `identity_<name>` card whose keyholder
 is the operator — **derived on their machine, not shipped by us.** That is how the operator loads their
-own agent (Wingnut, for Vroku) from their own session history.
+own agent (e.g. Wingnut) from their own session history.
 
 ### 4. Mint identity keys (operator-owned)
 
@@ -98,8 +98,8 @@ never generate silently; prompt for `sub` and confirm before writing.
 
 ### 5. Handoff
 
-Report: node tier at `~/.cogos/`, observatory seeded (N turns), the Wingnut room, default agent, and
-identity `<sub>`. They open the Wingnut room and are inside their own history with their agent.
+Report: node tier at `~/.cogos/`, observatory seeded (N turns), the seeded history room, default agent, and
+identity `<sub>`. They open the seeded room and are inside their own history with their agent.
 
 ## Pitfalls
 

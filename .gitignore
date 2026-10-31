@@ -4,8 +4,3 @@ __pycache__/
 node_modules/
 .env
 canary/.last_run.json
-
-# Private operator data — ships as a fetched pack artifact, never committed here
-*.pack
-wingnut-conversation.json
-**/seed/*-conversation.json

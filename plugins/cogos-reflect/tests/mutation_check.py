@@ -22,6 +22,19 @@ MUTS = {
     "ledger fold without guard": ("scripts/reflect_ledger.py",
                                   'if not fid or r.get("op") not in ("add", "status") or (r.get("op") == "status" and r.get("to") not in STATUSES):',
                                   "if not fid:"),
+    "ledger append without redaction": ("scripts/reflect_ledger.py", "            row[k] = quote(row[k], cap)", "            pass"),
+    "ledger count without int guard": ("scripts/reflect_ledger.py", 'f["count"] = max(f["count"], _int(r.get("count")))',
+                                       'f["count"] = max(f["count"], int(r.get("count") or 0))'),
+    "error gist without quote": ("scripts/reflect_collect.py", "    return quote(t, 160)", "    return t[:160]"),
+    "codex adapter without call id": ("scripts/reflect_collect.py",
+                                      'ts, p.get("call_id"))\n                        if fam:',
+                                      'ts)\n                        if fam:'),
+    "hermes adapter without call id": ("scripts/reflect_collect.py",
+                                       'fam = add_call(s, fn.get("name"), args if isinstance(args, dict) else {}, ts, cid)',
+                                       'fam = add_call(s, fn.get("name"), args if isinstance(args, dict) else {}, ts)'),
+    "bash_shape keeps attached flag value": ("scripts/reflect_collect.py", "                f = f[:2]  # -pSECRET", "                pass  # -pSECRET"),
+    "norm_command keeps attached flag value": ("scripts/reflect_collect.py", 'r"\\1V", c)  # -pHunter2Secret', 'r"\\g<0>", c)  # -pHunter2Secret'),
+    "SEEN_CALLS not reset per run": ("scripts/reflect_collect.py", "    SEEN_CALLS.clear()\n    if a.run", "    if a.run"),
 }
 
 

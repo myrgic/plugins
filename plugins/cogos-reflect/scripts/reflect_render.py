@@ -105,7 +105,7 @@ def cards(rd: Path) -> str:
         t = p.read_text().strip()
         t = re.sub(r"^# .*", f"### Proposal {i} of {len(ps)}: " + p.parent.name, t, count=1) if t.startswith("# ") \
             else f"### Proposal {i} of {len(ps)}: {p.parent.name}\n{t}"
-        out.append(t + f"\n\n`{p.parent}`")
+        out.append(t + f"\n\n`proposals/{p.parent.name}/`")
     return "\n\n---\n\n".join(out) if out else "No proposals in this run."
 
 

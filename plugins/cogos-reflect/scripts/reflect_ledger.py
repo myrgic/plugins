@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from reflect_common import SCHEMA_VERSION, content_words, epoch_to_iso, jaccard, reflect_home  # noqa: E402
+from reflect_common import SCHEMA_VERSION, content_words, epoch_to_iso, jaccard, quote, redact_path, reflect_home  # noqa: E402
 
 STATUSES = ["observed", "proposed", "approved", "denied", "deferred", "applied", "verified", "retired"]
 KINDS = ["repeated-instruction", "repeated-correction", "manual-workflow", "incantation", "tool-friction",
@@ -37,7 +37,16 @@ def ledger_path() -> Path:
     return p
 
 
+TEXT_FIELDS = {"title": 200, "reason": 300, "ref": 300, "source": 300}
+
+
 def append(row: dict) -> dict:
+    """Every persisted string passes redaction: the ledger is committed on CogOS nodes."""
+    for k, cap in TEXT_FIELDS.items():
+        if row.get(k):
+            row[k] = quote(row[k], cap)
+    if row.get("evidence"):
+        row["evidence"] = [redact_path(e)[:120] for e in row["evidence"]]
     row = {"schema": SCHEMA_VERSION, "at": epoch_to_iso(time.time()), **row}
     with ledger_path().open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -57,6 +66,13 @@ def rows() -> list[dict]:
     return out
 
 
+def _int(v) -> int:
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def fold() -> dict[str, dict]:
     st: dict[str, dict] = {}
     for r in rows():
@@ -68,8 +84,8 @@ def fold() -> dict[str, dict]:
         if r["op"] == "add":
             f["kind"] = r.get("kind", f.get("kind"))
             f["title"] = r.get("title", f.get("title"))
-            f["count"] = max(f["count"], int(r.get("count") or 0))
-            f["sessions"] = max(f["sessions"], int(r.get("sessions") or 0))
+            f["count"] = max(f["count"], _int(r.get("count")))
+            f["sessions"] = max(f["sessions"], _int(r.get("sessions")))
             ev = [e for e in (r.get("evidence") or []) if e not in f["evidence"]]
             f["evidence"] = (f["evidence"] + ev)[-30:]
             f["last_seen"] = r.get("at")

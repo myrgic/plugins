@@ -76,7 +76,8 @@ def test_redaction():
 
 # ------------------------------------------------------------------ collect end to end
 
-def _claude_session(root: Path, sid: str, prompts: list[str], cmds: list[str], err: bool = False, day: int = 1):
+def _claude_session(root: Path, sid: str, prompts: list[str], cmds: list[str], err: bool = False, day: int = 1,
+                    err_text: str = "x"):
     p = root / ".claude" / "projects" / "-repo"
     p.mkdir(parents=True, exist_ok=True)
     lines = []
@@ -89,7 +90,8 @@ def _claude_session(root: Path, sid: str, prompts: list[str], cmds: list[str], e
         lines.append({"type": "assistant", "timestamp": f"2099-01-01T00:1{i}:00Z",
                       "message": {"content": [{"type": "tool_use", "id": f"{sid}-t{i}", "name": "Bash", "input": {"command": c}}]}})
         lines.append({"type": "user", "timestamp": f"2099-01-01T00:1{i}:30Z",
-                      "message": {"content": [{"type": "tool_result", "tool_use_id": f"{sid}-t{i}", "is_error": err, "content": "x"}]}})
+                      "message": {"content": [{"type": "tool_result", "tool_use_id": f"{sid}-t{i}", "is_error": err,
+                                               "content": err_text}]}})
     (p / f"{sid}.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
 
 
@@ -148,18 +150,21 @@ def test_collect_redacts_every_output(home):
     for i in range(3):
         _claude_session(h, f"r{i}", [f"never push with {SECRET} again, use the deploy key",
                                      "always run the linter first please"],
-                        [f"token={SECRET} git push origin main", f"curl -H 'Authorization: Bearer {SECRET}' https://x"],
-                        err=True, day=i + 1)
+                        [f"token={SECRET} git push origin main",
+                         f"curl -sS -H 'Authorization: Bearer {SECRET}' https://api.example.com/v1/repos/org/name/deployments",
+                         "mysql -pHunter2Secret -uroot production_db --batch --execute status"],
+                        err=True, day=i + 1, err_text=f'{{"error": "auth failed for api_key={SECRET} at /x"}}')
     code, out, err = run("reflect_collect.py", "--since", "2000-01-01", "--run", "sec", env=env)
     assert code == 0, err
     rd = tmp / "runs" / "sec"
     for f in ("bundle.json", "sessions.jsonl"):
         text = (rd / f).read_text().lower()
         assert SECRET.lower() not in text, f"secret leaked into {f}"
-        assert "hunter" not in text
+        assert "hunter2secret" not in text, f"short-flag secret leaked into {f}"
         assert str(h).lower() not in text, f"home path leaked into {f}"
     b = json.loads((rd / "bundle.json").read_text())
     assert b["repeated_corrections"], "the repeated correction should still cluster"
+    assert b["incantations"] and b["error_signatures"], "error and incantation paths must be exercised"
     assert all(SECRET.lower() not in c["key"] for c in b["repeated_corrections"] + b["repeated_instructions"])
 
 
@@ -175,9 +180,51 @@ def test_collect_dedupes_replayed_calls_per_adapter(home):
     assert json.loads(out)["totals"]["tool_calls"] == 1
 
 
+def test_collect_dedupes_codex_and_hermes(home):
+    h, env, tmp = home
+    cx = h / ".codex" / "sessions" / "2099"
+    cx.mkdir(parents=True)
+    ev = [{"timestamp": "2099-01-01T00:00:00Z", "type": "session_meta", "payload": {"cwd": "/repo"}},
+          {"timestamp": "2099-01-01T00:00:01Z", "type": "event_msg", "payload": {"type": "user_message", "message": "run it"}},
+          {"timestamp": "2099-01-01T00:00:02Z", "type": "response_item",
+           "payload": {"type": "function_call", "name": "shell", "call_id": "cx-1", "arguments": "{\"command\": \"ls\"}"}}]
+    for n in ("rollout-a", "rollout-b"):  # the same call replayed in a second rollout
+        (cx / f"{n}.jsonl").write_text("\n".join(json.dumps(e) for e in ev))
+    _hermes_db(h)
+    con = sqlite3.connect(h / ".hermes" / "profiles" / "p1" / "state.db")
+    now = 4070908800
+    con.execute("insert into sessions values('h3','discord',?,?,'t','/repo')", (now, now + 9))
+    con.execute("insert into messages(session_id,role,content,tool_calls,timestamp) values('h3','assistant','',?,?)",
+                (json.dumps([{"id": "c1", "function": {"name": "terminal", "arguments": "{}"}}]), now + 1))
+    con.commit()
+    con.close()
+    code, out, err = run("reflect_collect.py", "--since", "2000-01-01", "--sources", "codex,hermes", "--run", "dd2", env=env)
+    assert code == 0, err
+    assert json.loads(out)["totals"]["tool_calls"] == 2  # cx-1 once, hermes c1 once
+
+
+def test_collect_main_is_reentrant(home):
+    h, env, tmp = home
+    _claude_session(h, "a", ["first prompt here for the session"], ["ls -la"], day=1)
+    env2 = {**os.environ, **env}
+    old = dict(os.environ)
+    os.environ.update(env2)
+    try:
+        import io, contextlib
+        for rid in ("re1", "re2"):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                assert rc.main(["--since", "2000-01-01", "--run", rid]) == 0
+            assert json.loads(buf.getvalue())["totals"]["tool_calls"] == 1
+    finally:
+        os.environ.clear()
+        os.environ.update(old)
+
+
 def test_bash_shape_drops_assignments():
     assert "hunter2" not in rc.bash_shape("token=hunter2secret git push")
     assert rc.bash_shape("token=hunter2secret git push") == "git push"
+    assert rc.bash_shape("mysql -pHunter2Secret -uroot db") == "mysql -p -u"
 
 
 def test_no_quadratic_backtracking():
@@ -220,6 +267,7 @@ def test_ledger_fold_and_denial_memory(home):
     assert run("reflect_ledger.py", "add", "--id", "F-1", "--kind", "repeated-correction",
                "--title", "routes claude through openrouter", "--sessions", "3", env=env)[0] == 0
     assert run("reflect_ledger.py", "status", "--id", "F-1", "--to", "denied", "--reason", "not now", env=env)[0] == 0
+    assert run("reflect_ledger.py", "status", "--id", "F-1", "--to", "denied", "--reason", "still not", env=env)[0] == 0
     code, out, _ = run("reflect_ledger.py", "check", "--title", "claude routed via openrouter again", env=env)
     v = json.loads(out)
     assert v["verdict"] == "denied-before" and v["previously_denied"][0]["id"] == "F-1"
@@ -232,6 +280,15 @@ def test_ledger_fold_and_denial_memory(home):
         fh.write('{"id": "F-x"}\n{"id": "F-1", "op": "status"}\nnot json\n')
     code, out, _ = run("reflect_ledger.py", "stats", env=env)
     assert code == 0 and json.loads(out)["by_status"] == {"denied": 1}
+    # bad types in a hand-edited row are tolerated too
+    with lp.open("a") as fh:
+        fh.write('{"id": "F-1", "op": "add", "kind": "other", "title": "t", "count": "lots"}\n')
+    assert run("reflect_ledger.py", "stats", env=env)[0] == 0
+    # everything persisted is redacted (the ledger is committed on CogOS)
+    run("reflect_ledger.py", "status", "--id", "F-1", "--to", "denied", "--reason", f"no, that uses {SECRET}", env=env)
+    run("reflect_ledger.py", "add", "--id", "F-2", "--kind", "other", "--title", f"key {SECRET} leaked",
+        "--evidence", f"{env['HOME']}/x", env=env)
+    assert SECRET not in lp.read_text() and env["HOME"] not in lp.read_text()
     # append-only: every write grows the file, nothing is rewritten
     before = lp.read_text()
     run("reflect_ledger.py", "status", "--id", "F-1", "--to", "deferred", env=env)

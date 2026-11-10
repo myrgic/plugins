@@ -114,6 +114,8 @@ _SECRET_PATTERNS = [
     re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Fa-f0-9]{40,}\b"),
     re.compile(r"\b[A-Za-z0-9+/]{48,}={0,2}"),
+    re.compile(r"(?<=\s-p)(?!\s)\S{4,}"),  # mysql -pSECRET
+    re.compile(r"(?i)(?<=--password[= ])\S+"),
     re.compile(r"/mcp-connector/[A-Za-z0-9_\-]{8,}"),
     re.compile(r"/r/[A-Za-z0-9_\-]{16,}"),
 ]

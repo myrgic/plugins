@@ -17,7 +17,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from reflect_common import content_words, die, jaccard, latest_run_dir, new_run_dir, runs_home, write_json  # noqa: E402
+from reflect_common import (content_words, die, jaccard, latest_run_dir, new_run_dir, quote, redact_path,  # noqa: E402
+                            runs_home, write_json)
 
 FM = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
@@ -97,11 +98,11 @@ def main(argv=None) -> int:
             foreign = sum(1 for r in refs if not local(r))
             u = usage.get(name, {})
             skills.append({
-                "name": name, "home": home_kind, "path": s, "bytes": len(text),
-                "description": fm.get("description", "")[:300], "desc_len": len(fm.get("description", "")),
+                "name": name, "home": home_kind, "path": redact_path(s), "bytes": len(text),
+                "description": quote(fm.get("description", ""), 300), "desc_len": len(fm.get("description", "")),
                 "uses_in_window": invoked.get(name, 0), "uses_total": u.get("use_count"),
                 "last_used": u.get("last_used_at"), "state": u.get("state"), "pinned": u.get("pinned"),
-                "created_by": u.get("created_by"), "broken_refs": broken, "foreign_refs": foreign,
+                "created_by": u.get("created_by"), "broken_refs": [redact_path(b) for b in broken], "foreign_refs": foreign,
             })
     # overlap
     words = [set(content_words(s["name"] + " " + s["description"])) for s in skills]

@@ -5,7 +5,7 @@ Builds a skill index (name + description) from this plugin's skills plus a set o
 an agent would also see, then asks a model, per prompt, which ONE skill it would load first.
 Model call goes through `claude -p` (operator's own subscription; no API key handling here).
 
-  run_trigger_evals.py [--model sonnet] [--decoys N]
+  run_trigger_evals.py [--model sonnet] [--min 0.85]
 Prints per-case results and a pass rate. Exit 0 if pass rate >= --min (default 0.85).
 """
 from __future__ import annotations

@@ -151,7 +151,10 @@ def bash_shape(cmd: str) -> str:
     shape = [head]
     for tk in toks[1:4]:
         if tk.startswith("-"):
-            shape.append(tk.split("=")[0])
+            f = tk.split("=")[0]
+            if re.fullmatch(r"-[A-Za-z]", f[:2]) and len(f) > 2 and not f.startswith("--"):
+                f = f[:2]  # -pSECRET / -uroot: keep the flag, drop the attached value
+            shape.append(f)
         elif re.fullmatch(r"[a-z][a-z0-9\-]{1,20}", tk) and len(shape) < 3:
             shape.append(tk)
         else:
@@ -169,16 +172,16 @@ def tool_family(name: str, args: dict | None) -> str:
         return f"shell:{s}" if s else "shell"
     if n.startswith("mcp__"):
         parts = n.split("__")
-        return f"mcp:{parts[1] if len(parts) > 1 else n}"
-    return n or "unknown"
+        return quote(f"mcp:{parts[1] if len(parts) > 1 else n}", 60)
+    return quote(n, 60) or "unknown"
 
 
 def skill_name_from_call(name: str, args: dict | None) -> str | None:
     a = args or {}
     if name == "Skill":
-        return str(a.get("skill") or a.get("name") or "") or None
+        return quote(str(a.get("skill") or a.get("name") or ""), 80) or None
     if name in ("skill_view", "skills_view"):
-        return str(a.get("name") or "") or None
+        return quote(str(a.get("name") or ""), 80) or None
     return None
 
 
@@ -285,6 +288,7 @@ def norm_command(cmd: str) -> str:
     c = re.split(r"\s*(?:\|\||&&|;|\n)\s*", c, maxsplit=1)[0]
     c = c.split(" | ")[0]
     c = re.sub(r"'[^']*'|\"[^\"]*\"", "S", c)
+    c = re.sub(r"(?<=\s)(-[A-Za-z])(?=\S*[A-Z0-9])\S{3,}", r"\1V", c)  # -pHunter2Secret -> -pV
     c = re.sub(r"\b[0-9a-f]{6,}\b", "H", c)
     c = re.sub(r"\d+", "N", c)
     return re.sub(r"\s+", " ", c).strip()[:240]
@@ -295,12 +299,13 @@ WAIT_FAMILIES = re.compile(r"^(shell:sleep|process|shell:timeout|wait|shell:watc
 
 # ----------------------------------------------------------------------------- adapters
 
-SCAN_WSL = os.environ.get("REFLECT_SCAN_WSL", "1") != "0"
+def _scan_wsl() -> bool:
+    return os.environ.get("REFLECT_SCAN_WSL", "1") != "0"
 
 
 def claude_roots(extra: list[str]) -> list[Path]:
     roots = [Path.home() / ".claude" / "projects"]
-    if SCAN_WSL and Path("/mnt/c/Users").is_dir():  # WSL: Windows-side Claude Code
+    if _scan_wsl() and Path("/mnt/c/Users").is_dir():  # WSL: Windows-side Claude Code
         roots += [Path(p) for p in glob.glob("/mnt/c/Users/*/.claude/projects")]
     roots += [Path(e).expanduser() for e in extra]
     seen, out = set(), []
@@ -372,7 +377,7 @@ def adapt_claude_code(since: float, project: str | None, extra: list[str]):
 
 def adapt_codex(since: float, project: str | None, extra: list[str]):
     roots = [Path.home() / ".codex" / "sessions"]
-    if SCAN_WSL and Path("/mnt/c/Users").is_dir():
+    if _scan_wsl() and Path("/mnt/c/Users").is_dir():
         roots += [Path(p) for p in glob.glob("/mnt/c/Users/*/.codex/sessions")]
     roots += [Path(e).expanduser() for e in extra]
     for root in roots:
@@ -473,7 +478,7 @@ def adapt_hermes(since: float, project: str | None, extra: list[str]):
             s["lineage"] = f"{label}:{root_of(sid)}"
             s["title"], s["cwd"] = title[:120], cwd
             s["automated"] = src in HERMES_AUTOMATED
-            s["channel"] = src
+            s["channel"] = quote(src or "", 40)
             touch(s, st)
             touch(s, en)
             pending = {}
@@ -772,6 +777,7 @@ def main(argv=None) -> int:
                     help="speaker tag(s) that are the operator in multi-user chats, e.g. 'Slow Bro'")
     a = ap.parse_args(argv)
     OPERATORS[:] = a.operator
+    SEEN_CALLS.clear()
     if a.run and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,80}", a.run) or ".." in a.run):
         print(f"error: --run must be a plain name (letters, digits, . _ -), got {a.run!r}", file=sys.stderr)
         return 2

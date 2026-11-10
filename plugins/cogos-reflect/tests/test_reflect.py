@@ -225,6 +225,10 @@ def test_bash_shape_drops_assignments():
     assert "hunter2" not in rc.bash_shape("token=hunter2secret git push")
     assert rc.bash_shape("token=hunter2secret git push") == "git push"
     assert rc.bash_shape("mysql -pHunter2Secret -uroot db") == "mysql -p -u"
+    # positionals of non-subcommand tools are data: never part of a shape
+    assert rc.bash_shape("redis-cli auth hunterpw") == "redis-cli auth"  # -cli takes a subcommand; the value is dropped
+    assert rc.bash_shape("echo hunter2") == "echo"
+    assert rc.bash_shape("git status --short") == "git status --short"
 
 
 def test_no_quadratic_backtracking():
@@ -289,6 +293,7 @@ def test_ledger_fold_and_denial_memory(home):
     run("reflect_ledger.py", "add", "--id", "F-2", "--kind", "other", "--title", f"key {SECRET} leaked",
         "--evidence", f"{env['HOME']}/x", env=env)
     assert SECRET not in lp.read_text() and env["HOME"] not in lp.read_text()
+    assert run("reflect_ledger.py", "add", "--id", f"F-{SECRET}/../x", "--kind", "other", "--title", "t", env=env)[0] == 2
     # append-only: every write grows the file, nothing is rewritten
     before = lp.read_text()
     run("reflect_ledger.py", "status", "--id", "F-1", "--to", "deferred", env=env)

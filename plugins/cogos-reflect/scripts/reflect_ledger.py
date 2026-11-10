@@ -19,6 +19,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -143,6 +144,9 @@ def main(argv=None) -> int:
     sub.add_parser("path")
     a_ = ap.parse_args(argv)
 
+    if getattr(a_, "id", None) and not re.fullmatch(r"[A-Za-z]{1,4}-[A-Za-z0-9]{1,40}", a_.id):
+        print(json.dumps({"ok": False, "reason": "id must look like F-<hex> / L-<hex>"}))
+        return 2
     if a_.cmd == "path":
         print(ledger_path())
         return 0

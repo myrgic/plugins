@@ -132,6 +132,17 @@ def is_brief(raw) -> bool:
 
 # ----------------------------------------------------------------------------- tool families
 
+# Commands whose first positionals are subcommands (git status, gh pr view). For any other command
+# a positional is an argument (a filename, a word to echo, a password) and never enters a shape.
+SUBCOMMAND_HEADS = {
+    "git", "gh", "docker", "kubectl", "npm", "pnpm", "yarn", "bun", "cargo", "go", "uv", "pip", "pip3",
+    "hermes", "claude", "codex", "cog", "systemctl", "launchctl", "brew", "apt", "apt-get", "make", "just",
+    "terraform", "aws", "gcloud", "az", "helm", "poetry", "conda", "ollama", "tirith", "wrangler", "gog",
+}
+# Tools with two-level subcommands (gh pr view, docker compose up, kubectl get pods is data).
+NESTED_SUB_HEADS = {"gh", "docker", "hermes", "cog", "aws", "gcloud", "az", "wrangler", "gog", "uv", "cargo"}
+
+
 def bash_shape(cmd: str) -> str:
     """Normalize a shell command to a reusable 'shape': first command + subcommand + flags."""
     c = (cmd or "").strip()
@@ -149,14 +160,16 @@ def bash_shape(cmd: str) -> str:
         return "assign"
     head = os.path.basename(toks[0])
     shape = [head]
+    takes_sub = head in SUBCOMMAND_HEADS or head.endswith("-cli") or head.endswith(".py")
     for tk in toks[1:4]:
         if tk.startswith("-"):
             f = tk.split("=")[0]
             if re.fullmatch(r"-[A-Za-z]", f[:2]) and len(f) > 2 and not f.startswith("--"):
                 f = f[:2]  # -pSECRET / -uroot: keep the flag, drop the attached value
             shape.append(f)
-        elif re.fullmatch(r"[a-z][a-z0-9\-]{1,20}", tk) and len(shape) < 3:
-            shape.append(tk)
+        elif takes_sub and re.fullmatch(r"[a-z][a-z0-9\-]{1,20}", tk) and len(shape) < 3 \
+                and (len(shape) == 1 or head in NESTED_SUB_HEADS):
+            shape.append(tk)  # a subcommand; other commands' positionals are data and may be secret
         else:
             break
     return " ".join(shape)
@@ -318,7 +331,7 @@ def claude_roots(extra: list[str]) -> list[Path]:
 
 def adapt_claude_code(since: float, project: str | None, extra: list[str]):
     for root in claude_roots(extra):
-        for f in root.glob("*/*.jsonl"):
+        for f in sorted(root.glob("*/*.jsonl"), key=lambda p: (p.stat().st_mtime, str(p))):
             try:
                 if f.stat().st_mtime < since:
                     continue
@@ -383,7 +396,7 @@ def adapt_codex(since: float, project: str | None, extra: list[str]):
     for root in roots:
         if not root.is_dir():
             continue
-        for f in root.rglob("rollout-*.jsonl"):
+        for f in sorted(root.rglob("rollout-*.jsonl")):
             try:
                 if f.stat().st_mtime < since:
                     continue
@@ -391,7 +404,11 @@ def adapt_codex(since: float, project: str | None, extra: list[str]):
                 continue
             s = new_session(f"codex:{f.stem.replace('rollout-', '')}", "codex")
             pending = {}
-            with f.open(encoding="utf-8", errors="replace") as fh:
+            try:
+                fh = f.open(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with fh:
                 for line in fh:
                     try:
                         r = json.loads(line)
@@ -802,7 +819,7 @@ def main(argv=None) -> int:
         try:
             sessions.extend(fn())
         except Exception as e:  # an unreadable source must not sink the run
-            errors.append(f"{name}: {type(e).__name__}: {e}")
+            errors.append(quote(f"{name}: {type(e).__name__}: {e}", 240))
         if len(sessions) > n0:
             used.append(f"{name}={len(sessions) - n0}")
     if a.include_automated:

@@ -98,11 +98,12 @@ def main(argv=None) -> int:
             foreign = sum(1 for r in refs if not local(r))
             u = usage.get(name, {})
             skills.append({
-                "name": name, "home": home_kind, "path": redact_path(s), "bytes": len(text),
+                "name": quote(name, 80), "home": home_kind, "path": redact_path(s), "bytes": len(text),
                 "description": quote(fm.get("description", ""), 300), "desc_len": len(fm.get("description", "")),
                 "uses_in_window": invoked.get(name, 0), "uses_total": u.get("use_count"),
-                "last_used": u.get("last_used_at"), "state": u.get("state"), "pinned": u.get("pinned"),
-                "created_by": u.get("created_by"), "broken_refs": [redact_path(b) for b in broken], "foreign_refs": foreign,
+                "last_used": quote(str(u.get("last_used_at") or ""), 40) or None,
+                "state": quote(str(u.get("state") or ""), 20) or None, "pinned": bool(u.get("pinned")),
+                "created_by": quote(str(u.get("created_by") or ""), 40) or None, "broken_refs": [redact_path(b) for b in broken], "foreign_refs": foreign,
             })
     # overlap
     words = [set(content_words(s["name"] + " " + s["description"])) for s in skills]

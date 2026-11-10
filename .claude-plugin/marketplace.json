@@ -152,6 +152,11 @@
       "name": "cogos-cloud-node",
       "source": "./plugins/cogos-cloud-node",
       "description": "Stand up a CogOS node in a Claude Code Cloud environment from your phone. Ships method only."
+    },
+    {
+      "name": "cogos-reflect",
+      "source": "./plugins/cogos-reflect",
+      "description": "Agent-run reflection over your session history: find recurring friction, propose the cheapest fix, gate every change on approval, curate skills."
     }
   ]
 }

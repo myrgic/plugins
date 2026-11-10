@@ -1,0 +1,25 @@
+{
+  "_note": "Trigger evals: given ONLY the skill index (name + description), which skill should an agent load first? 'none' = none of the suite. Run: evals/run_trigger_evals.py",
+  "cases": [
+    {"prompt": "how am I using you lately? what are my patterns?", "expect": ["reflect", "find-friction", "gather-history"]},
+    {"prompt": "look at how we work and make it easier", "expect": ["reflect"]},
+    {"prompt": "why do I keep having to tell you to use background mode", "expect": ["find-friction", "reflect"]},
+    {"prompt": "what's slowing us down this month?", "expect": ["find-friction", "reflect"]},
+    {"prompt": "go through the last two weeks of sessions", "expect": ["gather-history", "reflect"]},
+    {"prompt": "turn that into a skill so it sticks", "expect": ["propose-fixes"]},
+    {"prompt": "never do that again", "expect": ["propose-fixes", "session-retro"]},
+    {"prompt": "what should we change about your setup?", "expect": ["propose-fixes", "reflect"]},
+    {"prompt": "show me the proposals you drafted", "expect": ["review-proposals"]},
+    {"prompt": "ok approve the first two, deny the third", "expect": ["review-proposals"]},
+    {"prompt": "did that fix actually work?", "expect": ["review-proposals"]},
+    {"prompt": "clean up my skills, there are too many", "expect": ["curate-skills"]},
+    {"prompt": "which skills are stale?", "expect": ["curate-skills"]},
+    {"prompt": "what did we learn today? let's wrap up", "expect": ["session-retro"]},
+    {"prompt": "what went wrong there?", "expect": ["session-retro"]},
+    {"prompt": "review this PR for bugs", "expect": ["none"]},
+    {"prompt": "what did we decide about the kernel port last week?", "expect": ["none"]},
+    {"prompt": "write me a new skill for deploying the stage", "expect": ["none"]},
+    {"prompt": "restart the gateway", "expect": ["none"]},
+    {"prompt": "summarize this article", "expect": ["none"]}
+  ]
+}

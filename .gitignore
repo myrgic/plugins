@@ -9,3 +9,5 @@ canary/.last_run.json
 *.pack
 wingnut-conversation.json
 **/seed/*-conversation.json
+.pytest_cache/
+plugins/cogos-reflect/evals/last_trigger_run.json

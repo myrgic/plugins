@@ -63,8 +63,8 @@ def test_bash_shape_and_norm():
 def test_replayed_tool_calls_count_once():
     rc.SEEN_CALLS.clear()
     s1, s2 = rc.new_session("a", "x"), rc.new_session("b", "x")
-    assert rc.add_call(s1, "Bash", {"command": "ls"}, None, "id-1")
-    assert rc.add_call(s2, "Bash", {"command": "ls"}, None, "id-1") is None
+    assert rc.add_call(s1, "Bash", {"command": "ls"}, None, "toolu_01ABCDEFGHIJKLMNOP")
+    assert rc.add_call(s2, "Bash", {"command": "ls"}, None, "toolu_01ABCDEFGHIJKLMNOP") is None
     assert (s1["tool_calls"], s2["tool_calls"]) == (1, 0)
 
 
@@ -88,9 +88,9 @@ def _claude_session(root: Path, sid: str, prompts: list[str], cmds: list[str], e
         t += 1
     for i, c in enumerate(cmds):
         lines.append({"type": "assistant", "timestamp": f"2099-01-01T00:1{i}:00Z",
-                      "message": {"content": [{"type": "tool_use", "id": f"{sid}-t{i}", "name": "Bash", "input": {"command": c}}]}})
+                      "message": {"content": [{"type": "tool_use", "id": f"toolu_{sid}_{i:04d}_xxxxxxxx", "name": "Bash", "input": {"command": c}}]}})
         lines.append({"type": "user", "timestamp": f"2099-01-01T00:1{i}:30Z",
-                      "message": {"content": [{"type": "tool_result", "tool_use_id": f"{sid}-t{i}", "is_error": err,
+                      "message": {"content": [{"type": "tool_result", "tool_use_id": f"toolu_{sid}_{i:04d}_xxxxxxxx", "is_error": err,
                                                "content": err_text}]}})
     (p / f"{sid}.jsonl").write_text("\n".join(json.dumps(x) for x in lines))
 
@@ -107,9 +107,9 @@ def _hermes_db(root: Path):
     con.execute("insert into messages(session_id,role,content,timestamp) values('h1','user',?,?)",
                 ("[Slow Bro] don't use openrouter for claude models again", now))
     con.execute("insert into messages(session_id,role,content,tool_calls,timestamp) values('h1','assistant','',?,?)",
-                (json.dumps([{"id": "c1", "function": {"name": "terminal", "arguments": json.dumps({"command": "ls -la"})}}]), now + 1))
+                (json.dumps([{"id": "toolu_01HERMESREPLAY00001", "function": {"name": "terminal", "arguments": json.dumps({"command": "ls -la"})}}]), now + 1))
     con.execute("insert into messages(session_id,role,content,tool_call_id,timestamp) values('h1','tool',?,?,?)",
-                ('{"exit_code": 1, "error": "boom"}', "c1", now + 2))
+                ('{"exit_code": 1, "error": "boom"}', "toolu_01HERMESREPLAY00001", now + 2))
     con.execute("insert into sessions values('h2','cron',?,?,'c','/repo')", (now, now + 5))
     con.execute("insert into messages(session_id,role,content,timestamp) values('h2','user','[IMPORTANT: You are running as a scheduled cron job.]',?)", (now,))
     con.commit()
@@ -187,20 +187,21 @@ def test_collect_dedupes_codex_and_hermes(home):
     ev = [{"timestamp": "2099-01-01T00:00:00Z", "type": "session_meta", "payload": {"cwd": "/repo"}},
           {"timestamp": "2099-01-01T00:00:01Z", "type": "event_msg", "payload": {"type": "user_message", "message": "run it"}},
           {"timestamp": "2099-01-01T00:00:02Z", "type": "response_item",
-           "payload": {"type": "function_call", "name": "shell", "call_id": "cx-1", "arguments": "{\"command\": \"ls\"}"}}]
+           "payload": {"type": "function_call", "name": "shell", "call_id": "call_9f8e7d6c5b4a3921", "arguments": "{\"command\": \"ls\"}"}}]
     for n in ("rollout-a", "rollout-b"):  # the same call replayed in a second rollout
         (cx / f"{n}.jsonl").write_text("\n".join(json.dumps(e) for e in ev))
     _hermes_db(h)
     con = sqlite3.connect(h / ".hermes" / "profiles" / "p1" / "state.db")
     now = 4070908800
+    # h3 replays h1's call with the same long id (a resumed / copied transcript)
     con.execute("insert into sessions values('h3','discord',?,?,'t','/repo')", (now, now + 9))
     con.execute("insert into messages(session_id,role,content,tool_calls,timestamp) values('h3','assistant','',?,?)",
-                (json.dumps([{"id": "c1", "function": {"name": "terminal", "arguments": "{}"}}]), now + 1))
+                (json.dumps([{"id": "toolu_01HERMESREPLAY00001", "function": {"name": "terminal", "arguments": "{}"}}]), now + 1))
     con.commit()
     con.close()
     code, out, err = run("reflect_collect.py", "--since", "2000-01-01", "--sources", "codex,hermes", "--run", "dd2", env=env)
     assert code == 0, err
-    assert json.loads(out)["totals"]["tool_calls"] == 2  # cx-1 once, hermes c1 once
+    assert json.loads(out)["totals"]["tool_calls"] == 2  # codex call once, hermes call once (h3 is a replay)
 
 
 def test_collect_main_is_reentrant(home):
@@ -221,6 +222,15 @@ def test_collect_main_is_reentrant(home):
         os.environ.update(old)
 
 
+def test_short_call_ids_do_not_collide_across_sessions():
+    rc.SEEN_CALLS.clear()
+    a, b = rc.new_session("a", "x"), rc.new_session("b", "x")
+    assert rc.add_call(a, "terminal", {}, None, "call_0")
+    assert rc.add_call(b, "terminal", {}, None, "call_0")  # different conversation, same short id
+    assert rc.add_call(a, "terminal", {}, None, "call_0") is None  # same conversation: replay
+    assert (a["tool_calls"], b["tool_calls"]) == (1, 1)
+
+
 def test_bash_shape_drops_assignments():
     assert "hunter2" not in rc.bash_shape("token=hunter2secret git push")
     assert rc.bash_shape("token=hunter2secret git push") == "git push"
@@ -234,6 +244,8 @@ def test_bash_shape_drops_assignments():
 def test_no_quadratic_backtracking():
     import time
     t = time.time()
+    redact("token" * 200000)
+    redact("a-" * 100000 + "=x")
     rc.operator_texts("[NOTE x " * 20000, None)
     rc.operator_texts("[Skill directory: " + "y" * 200000, None)
     assert time.time() - t < 0.5

@@ -35,6 +35,9 @@ MUTS = {
     "bash_shape keeps attached flag value": ("scripts/reflect_collect.py", "                f = f[:2]  # -pSECRET", "                pass  # -pSECRET"),
     "norm_command keeps attached flag value": ("scripts/reflect_collect.py", 'r"\\1V", c)  # -pHunter2Secret', 'r"\\g<0>", c)  # -pHunter2Secret'),
     "SEEN_CALLS not reset per run": ("scripts/reflect_collect.py", "    SEEN_CALLS.clear()\n    if a.run", "    if a.run"),
+    "short ids not namespaced": ("scripts/reflect_collect.py",
+                                 """key = call_id if len(call_id) >= 16 else f"{s.get('lineage') or s['id']}\\x1f{call_id}\"""",
+                                 "key = call_id"),
 }
 
 

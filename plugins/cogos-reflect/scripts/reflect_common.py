@@ -110,7 +110,7 @@ _SECRET_PATTERNS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"AIza[0-9A-Za-z_\-]{30,}"),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{16,}"),
-    re.compile(r"(?i)\b\w*(api[_-]?key|token|secret|password|passwd|pwd|auth)\w*\s*[=:]\s*\S{4,}"),
+    re.compile(r"(?i)\b\w{0,30}?(api[_-]?key|token|secret|password|passwd|pwd|auth)\w{0,30}\s*[=:]\s*\S{4,}"),
     re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Fa-f0-9]{40,}\b"),
     re.compile(r"\b[A-Za-z0-9+/]{48,}={0,2}"),
@@ -124,7 +124,7 @@ _SECRET_PATTERNS = [
 def redact(text: str | None) -> str:
     if not text:
         return ""
-    out = text
+    out = text[:20000]  # bound every pattern's worst case; callers cap their output far lower
     for p in _SECRET_PATTERNS:
         out = p.sub("[REDACTED]", out)
     return out

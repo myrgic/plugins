@@ -58,8 +58,9 @@ history.
 - elsewhere: `~/.cogos-reflect/ledger.jsonl`
 
 A finding moves `observed → proposed → approved | denied | deferred → applied → verified`. Counts
-accumulate across runs, and denials stop re-proposals. Verify mode checks whether an applied fix
-actually reduced the signal.
+accumulate across runs, and denials stop re-proposals. The ledger only stores state: checking
+whether an applied fix worked is a procedure in `review-proposals` (re-gather the window since
+the fix, recount the same signal, then mark it `verified` or open a `lesson-not-holding`).
 
 On a CogOS node, `reflect_backfill.py` seeds the ledger from lessons already written in the
 reflective store and friction ledgers. A later run can then flag `lesson-not-holding`: a lesson

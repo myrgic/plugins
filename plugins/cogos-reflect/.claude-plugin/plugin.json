@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "cogos-reflect",
+  "description": "Agent-run reflection over your own session history: gather evidence across Claude Code, Codex and Hermes, find recurring friction, propose the cheapest fix (skill, script, hook, permission, memory), gate every change on operator approval, and curate the skill library. One append-only ledger remembers denials and checks whether applied fixes worked. Upgrades on a CogOS node to the observatory and the reflective memory store.",
+  "version": "0.1.0",
+  "author": {
+    "name": "myrgic"
+  },
+  "homepage": "https://github.com/myrgic/plugins",
+  "repository": "https://github.com/myrgic/plugins",
+  "license": "MIT",
+  "keywords": ["reflection", "retrospective", "skills", "self-improvement", "history", "insights", "curation"]
+}

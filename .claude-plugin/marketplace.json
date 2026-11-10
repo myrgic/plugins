@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "plugins",
-  "description": "Skills, harness plugins, and modality integrations for CogOS \u2014 the cognitive operating system for AI development",
+  "description": "Skills, harness plugins, and modality integrations for CogOS — the cognitive operating system for AI development",
   "owner": {
     "name": "myrgic",
     "email": "myrgic@users.noreply.github.com"
@@ -30,7 +30,7 @@
     {
       "name": "cogos-substrate",
       "source": "./plugins/cogos-substrate",
-      "description": "Substrate archaeology \u2014 finding and trusting prior work in a CogOS/Myrgic substrate before building new things",
+      "description": "Substrate archaeology — finding and trusting prior work in a CogOS/Myrgic substrate before building new things",
       "version": "0.1.0",
       "category": "development",
       "keywords": [
@@ -45,7 +45,7 @@
     {
       "name": "cogos-voice",
       "source": "./plugins/cogos-voice",
-      "description": "Voice modality integration via Mod\u00b3 \u2014 dual-channel protocol for conversational AI development",
+      "description": "Voice modality integration via Mod³ — dual-channel protocol for conversational AI development",
       "version": "0.1.0",
       "category": "productivity",
       "keywords": [
@@ -59,7 +59,7 @@
     {
       "name": "cogos-research",
       "source": "./plugins/cogos-research",
-      "description": "Structured research skills \u2014 literature review, experiment design, and interdisciplinary synthesis",
+      "description": "Structured research skills — literature review, experiment design, and interdisciplinary synthesis",
       "version": "0.1.0",
       "category": "development",
       "keywords": [
@@ -73,7 +73,7 @@
     {
       "name": "cogos-dev-tools",
       "source": "./plugins/cogos-dev-tools",
-      "description": "Development methodology and tooling skills \u2014 code quality, systems architecture, technical writing, git forensics, shell and storage management, and cross-model CLI tooling",
+      "description": "Development methodology and tooling skills — code quality, systems architecture, technical writing, git forensics, shell and storage management, and cross-model CLI tooling",
       "version": "0.1.0",
       "category": "development",
       "keywords": [
@@ -90,7 +90,7 @@
     {
       "name": "cogos-architecture",
       "source": "./plugins/cogos-architecture",
-      "description": "CogOS architecture corpus hygiene \u2014 cross-check proposed RFCs/ADRs against the existing substrate corpus",
+      "description": "CogOS architecture corpus hygiene — cross-check proposed RFCs/ADRs against the existing substrate corpus",
       "version": "0.1.0",
       "category": "development",
       "keywords": [
@@ -135,7 +135,7 @@
     {
       "name": "cogos-onboard",
       "source": "./plugins/cogos-onboard",
-      "description": "Install a user-tier CogOS node and seed it from the operator's OWN claude.ai history, then mint their agent (e.g. Wingnut) from that history. Generic method \u2014 nothing operator-specific ships.",
+      "description": "Install a user-tier CogOS node and seed it from the operator's OWN claude.ai history, then mint their agent (e.g. Wingnut) from that history. Generic method — nothing operator-specific ships.",
       "version": "0.1.0",
       "category": "development",
       "keywords": [
@@ -152,6 +152,11 @@
       "name": "cogos-cloud-node",
       "source": "./plugins/cogos-cloud-node",
       "description": "Stand up a CogOS node in a Claude Code Cloud environment from your phone. Ships method only."
+    },
+    {
+      "name": "cogos-reflect",
+      "source": "./plugins/cogos-reflect",
+      "description": "Agent-run reflection over your session history: find recurring friction, propose the cheapest fix, gate every change on approval, curate skills."
     }
   ]
 }

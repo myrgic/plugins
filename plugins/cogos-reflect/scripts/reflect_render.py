@@ -26,8 +26,11 @@ PROPOSAL_FIELDS = ["What changes", "What you get", "Why you might say no", "Mech
 
 def run_dir(arg: str | None) -> Path:
     if arg:
-        p = Path(arg)
-        return p if p.is_dir() else runs_home() / arg
+        p = (runs_home() / arg).resolve()
+        if runs_home().resolve() not in p.parents or not p.is_dir():
+            print(f"error: no run {arg!r} under {runs_home()}", file=sys.stderr)
+            sys.exit(1)
+        return p
     r = latest_run_dir()
     if not r:
         print("error: no runs yet; run gather-history first", file=sys.stderr)

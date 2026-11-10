@@ -24,6 +24,8 @@ Don't use for: a clean one-shot task. A retro of nothing is noise.
 
 ## Steps
 
+`R` = this plugin's `scripts/` dir (`${CLAUDE_PLUGIN_ROOT}/scripts` in Claude Code; else `../../scripts` from this file).
+
 1. **Review the session in three bullets** from the conversation itself:
    - **Attempted:** what it set out to do and whether that landed. Two sentences max.
    - **Corrected by the operator:** each correction in one line, quoting their words. "None" if

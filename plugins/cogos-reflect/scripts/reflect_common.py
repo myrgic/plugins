@@ -50,6 +50,8 @@ def runs_home() -> Path:
 
 def new_run_dir(run_id: str | None = None) -> Path:
     rid = run_id or time.strftime("%Y%m%d-%H%M%S")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,80}", rid) or ".." in rid:
+        die(f"run id must be a plain name (letters, digits, . _ -), got {rid!r}")
     d = runs_home() / rid
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -108,7 +110,7 @@ _SECRET_PATTERNS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"AIza[0-9A-Za-z_\-]{30,}"),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._\-]{16,}"),
-    re.compile(r"(?i)(api[_-]?key|token|secret|password|passwd|pwd)\s*[=:]\s*\S{6,}"),
+    re.compile(r"(?i)\b\w*(api[_-]?key|token|secret|password|passwd|pwd|auth)\w*\s*[=:]\s*\S{4,}"),
     re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Fa-f0-9]{40,}\b"),
     re.compile(r"\b[A-Za-z0-9+/]{48,}={0,2}"),
@@ -126,9 +128,17 @@ def redact(text: str | None) -> str:
     return out
 
 
+_HOME = re.compile(r"(/(?:home|Users)/)[^/\s\"']+")
+
+
+def redact_path(p: str | None) -> str:
+    """Machine-local home dirs become ~ so artifacts don't carry usernames."""
+    return _HOME.sub("~", redact(p or ""))
+
+
 def quote(text: str | None, cap: int = 200) -> str:
     """A redacted, single-line, capped quote of operator/agent text."""
-    t = redact(text or "")
+    t = redact_path(text or "")
     t = re.sub(r"\s+", " ", t).strip()
     return t if len(t) <= cap else t[: cap - 1] + "…"
 
@@ -146,8 +156,13 @@ _STOP = set(
 
 
 def content_words(text: str) -> list[str]:
-    words = re.findall(r"[a-z][a-z0-9_\-]{2,}", (text or "").lower())
+    # Redact BEFORE tokenizing: cluster keys and ledger titles are built from these words.
+    words = re.findall(r"[a-z][a-z0-9_\-]{2,}", redact(text or "").lower())
+    words = [w for w in words if not w.startswith("redacted") and not _TOKENISH.fullmatch(w)]
     return [stem(w) for w in words if w not in _STOP]
+
+
+_TOKENISH = re.compile(r"(?=[a-z0-9_\-]*\d)[a-z0-9_\-]{20,}")  # long mixed tokens look like ids/secrets
 
 
 def stem(w: str) -> str:

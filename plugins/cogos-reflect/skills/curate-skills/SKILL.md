@@ -21,6 +21,8 @@ judgment pass on top of it, and covers the Claude Code and marketplace skills it
 
 ## Steps
 
+`R` = this plugin's `scripts/` dir (`${CLAUDE_PLUGIN_ROOT}/scripts` in Claude Code; else `../../scripts` from this file).
+
 1. **Inventory.** Run:
    ```
    python3 $R/reflect_skills.py

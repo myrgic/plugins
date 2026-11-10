@@ -28,7 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reflect_common import (  # noqa: E402
     SCHEMA_VERSION, content_words, epoch_to_iso, find_cog_workspace, iso_to_epoch, jaccard,
-    new_run_dir, parse_since, quote, redact, stable_id, write_json,
+    new_run_dir, parse_since, quote, redact, redact_path, stable_id, write_json,
 )
 
 # ----------------------------------------------------------------------------- operator text
@@ -60,7 +60,7 @@ EMBEDDED_BLOCK = re.compile(
     r"\[(?:Available tools|Skill directory|Attached image|Image attached at|Context from the interrupted|"
     r"This response was interrupted|People on the stage now|Chaz moved to|Meeting mode|Meeting ended|NOTE|"
     r"The user sent a|Chaz tapped Respond|Voice channel now|Replying to|Attached file|Document attached)"
-    r"[^\]]*\]", re.I)
+    r"[^\]\n]{0,400}\]", re.I)
 # Text that, wherever it appears, means the turn is a delegated brief / harness nudge, not the operator.
 BRIEF_MARKERS = re.compile(
     r"^(?:\[stage work thread\]|You are (?:Cog's|reviewing|a |an |the |drafting|evaluating|running|working)|"
@@ -71,11 +71,16 @@ BRIEF_MARKERS = re.compile(
 def _strip_injected(t: str) -> str:
     # Auto-loaded skill bodies: keep only what follows the skill's closing boilerplate.
     if "[Skill directory:" in t:
-        tail = re.split(r"\[Skill directory:[^\]]*\]\s*(?:Resolve any relative paths[^\n]*\n)?", t)[-1]
+        tail = re.split(r"\[Skill directory:[^\]\n]{0,400}\]\s*(?:Resolve any relative paths[^\n]*\n)?", t)[-1]
         t = tail.strip()
     if "[Recent channel messages]" in t:
-        parts = re.split(r"\[Now addressed to you:?[^\]]*\]", t)
-        t = parts[-1] if len(parts) > 1 else re.sub(r"\[Recent channel messages\][\s\S]*?(\n\n|$)", "", t)
+        parts = re.split(r"\[Now addressed to you:?[^\]\n]{0,200}\]", t)
+        if len(parts) > 1:
+            t = parts[-1]
+        else:
+            i = t.find("[Recent channel messages]")
+            j = t.find("\n\n", i)
+            t = t[:i] + (t[j + 2:] if j >= 0 else "")
     marker = "User correction/guidance after interrupt:"
     if marker in t:
         t = t.rsplit(marker, 1)[1]
@@ -89,6 +94,7 @@ def operator_texts(raw, operators: list[str] | None) -> list[tuple[str, str]]:
     if not raw or not isinstance(raw, str):
         return []
     out = []
+    raw = raw[:20000]  # cap before any regex: pasted documents are not utterances, and bounds the scans
     for chunk in re.split(r"\[New message\]", raw):
         t = TIMESTAMP_TAG.sub("", chunk.strip())
         if t.startswith(INJECTED_PREFIXES):
@@ -134,11 +140,13 @@ def bash_shape(cmd: str) -> str:
     while prev != c:  # wrappers and env assignments, in any order
         prev = c
         c = re.sub(r"^((sudo|timeout\s+\d+\w?|env|nohup|time)\s+)+", "", c)
-        c = re.sub(r"^([A-Z_][A-Z0-9_]*=\S+\s+)+", "", c)
+        c = re.sub(r"^([A-Za-z_][A-Za-z0-9_]*=\S+\s+)+", "", c)
     first = re.split(r"\s*(\|\||&&|\||;)\s*", c, maxsplit=1)[0]
     toks = first.split()
     if not toks:
         return ""
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", toks[0]):  # a bare assignment with nothing after it
+        return "assign"
     head = os.path.basename(toks[0])
     shape = [head]
     for tk in toks[1:4]:
@@ -157,7 +165,7 @@ def tool_family(name: str, args: dict | None) -> str:
         cmd = (args or {}).get("command") or (args or {}).get("cmd") or ""
         if isinstance(cmd, list):
             cmd = " ".join(map(str, cmd))
-        s = bash_shape(str(cmd))
+        s = redact(bash_shape(str(cmd)))
         return f"shell:{s}" if s else "shell"
     if n.startswith("mcp__"):
         parts = n.split("__")
@@ -624,7 +632,7 @@ def analyze(sessions: list[dict], args) -> dict:
     for s in sessions:
         lin = s.get("lineage") or s["id"]
         for cmd in s["commands"]:
-            sh = bash_shape(cmd)
+            sh = redact(bash_shape(cmd))
             if not sh:
                 continue
             shape_sessions[sh].add(lin)
@@ -736,7 +744,7 @@ def session_line(s: dict) -> dict:
     return {
         "id": s["id"], "source": s["source"], "channel": s.get("channel", ""), "automated": s["automated"],
         "start": epoch_to_iso(s["start"]), "end": epoch_to_iso(s["end"]), "title": redact(s["title"]),
-        "cwd": s["cwd"], "operator_turns": len(s["operator_turns"]), "first_prompt": quote(first, 240),
+        "cwd": redact_path(s["cwd"]), "operator_turns": len(s["operator_turns"]), "first_prompt": quote(first, 240),
         "tool_calls": s["tool_calls"], "tool_errors": s["tool_errors"], "denied": s["denied"],
         "top_families": dict(s["families"].most_common(6)), "skills": dict(s["skills"]),
         "corrections": [quote(t["text"], 200) for t in s["operator_turns"] if CORRECTION.search(t["text"][:600])][:5],
@@ -764,6 +772,9 @@ def main(argv=None) -> int:
                     help="speaker tag(s) that are the operator in multi-user chats, e.g. 'Slow Bro'")
     a = ap.parse_args(argv)
     OPERATORS[:] = a.operator
+    if a.run and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._\-]{0,80}", a.run) or ".." in a.run):
+        print(f"error: --run must be a plain name (letters, digits, . _ -), got {a.run!r}", file=sys.stderr)
+        return 2
 
     since = parse_since(a.since)
     want = {"claude-code", "codex", "hermes", "observatory"} if a.sources == "auto" else set(a.sources.split(","))

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from reflect_common import content_words, find_cog_workspace  # noqa: E402
+from reflect_common import content_words, find_cog_workspace, quote  # noqa: E402
 
 
 def stores() -> list[tuple[str, list[Path]]]:
@@ -83,7 +83,7 @@ def main(argv=None) -> int:
                     continue
                 f_ = [w for w, p in pats.items() if p.search(win)]
                 if len(f_) > len(best):
-                    best, best_line = f_, lines[i].strip()[:200]
+                    best, best_line = f_, quote(lines[i], 200)
                     if len(best) == len(words):
                         break
             if len(best) < need:

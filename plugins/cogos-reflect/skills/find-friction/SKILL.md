@@ -22,6 +22,8 @@ Don't use for: one session ("what went wrong just now") → `session-retro`.
 
 ## Steps
 
+`R` = this plugin's `scripts/` dir (`${CLAUDE_PLUGIN_ROOT}/scripts` in Claude Code; else `../../scripts` from this file).
+
 1. **Get the bundle.** Use the latest run's `bundle.json`. If there isn't one, run
    `gather-history` with defaults and say so in one line.
 2. **Read the bundle once.** Do not open transcripts. To drill into one session id, grep its
@@ -34,7 +36,7 @@ Don't use for: one session ("what went wrong just now") → `session-retro`.
    | repeated-correction | `repeated_corrections`, `correction_sample`: theme the sample by hand, it beats the clusters |
    | manual-workflow | `repeated_commands`, `incantations`: a multi-step thing re-derived each time |
    | incantation | `incantations`: a long exact command typed in 3+ sessions |
-   | tool-friction | `error_hotspots`: high error count *and* rate, not just volume |
+   | tool-friction | `error_signatures` first: the same error text across 3+ sessions, with automated share and first/last seen. Then `error_hotspots` (by tool), for a high error count *and* rate |
    | time-sink | `time_sinks`: ignore `waits` unless the operator asked about waiting |
    | permission-friction | `denials` |
 

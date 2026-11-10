@@ -46,8 +46,9 @@ said in a past session (that's session search).
 - Any step can run first: if its input is missing, it runs the previous step with defaults and
   says so in one line.
 
-All scripts live in this plugin's `scripts/` dir, are stdlib-only Python, take `--help`, and
-print JSON.
+All scripts live in this plugin's `scripts/` dir (`$R` in the skills: `${CLAUDE_PLUGIN_ROOT}/scripts`
+in Claude Code, else `../../scripts` from any SKILL.md). They are stdlib-only Python, take `--help`,
+and print JSON.
 
 ## Defaults
 

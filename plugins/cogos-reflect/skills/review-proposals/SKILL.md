@@ -21,6 +21,8 @@ refused ideas don't come back.
 
 ## Steps
 
+`R` = this plugin's `scripts/` dir (`${CLAUDE_PLUGIN_ROOT}/scripts` in Claude Code; else `../../scripts` from this file).
+
 1. **Load the cards.** Run `python3 $R/reflect_render.py cards` in the latest run, or the run
    the operator names. If it has no proposals, check the ledger for `proposed` items from older
    runs: `reflect_ledger.py show --status proposed`.

@@ -22,6 +22,8 @@ Don't use for: applying anything. That's `review-proposals`. This skill writes d
 
 ## Steps
 
+`R` = this plugin's `scripts/` dir (`${CLAUDE_PLUGIN_ROOT}/scripts` in Claude Code; else `../../scripts` from this file).
+
 1. **Input.** Use `findings.json` from the latest run. If there is none, run `find-friction`
    first and say so. A finding the operator names in chat is input too: record it, then go on.
 2. **Pick ≤ 3.** Take findings with sessions ≥ 2, strongest evidence first. Operator-named

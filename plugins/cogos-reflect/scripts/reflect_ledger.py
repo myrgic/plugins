@@ -61,8 +61,8 @@ def fold() -> dict[str, dict]:
     st: dict[str, dict] = {}
     for r in rows():
         fid = r.get("id")
-        if not fid:
-            continue
+        if not fid or r.get("op") not in ("add", "status") or (r.get("op") == "status" and r.get("to") not in STATUSES):
+            continue  # malformed or hand-edited row: skip it, never crash every reader
         f = st.setdefault(fid, {"id": fid, "status": "observed", "count": 0, "sessions": 0, "evidence": [],
                                 "history": [], "first_seen": r.get("at")})
         if r["op"] == "add":

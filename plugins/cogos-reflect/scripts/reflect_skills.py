@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from reflect_common import content_words, jaccard, latest_run_dir, write_json  # noqa: E402
+from reflect_common import content_words, die, jaccard, latest_run_dir, new_run_dir, runs_home, write_json  # noqa: E402
 
 FM = re.compile(r"^---\n(.*?)\n---\n", re.S)
 
@@ -113,7 +113,12 @@ def main(argv=None) -> int:
             elif i != j and t["name"] == s["name"] and t["home"] != s["home"]:
                 s.setdefault("also_installed_in", []).append(t["home"])
         s["overlaps"] = ov[:5]
-    out = Path(a.out) if a.out else ((run / "skills.json") if run else Path("skills.json"))
+    if a.out:
+        out = Path(a.out).resolve()
+        if runs_home().resolve() not in out.parents:
+            die(f"--out must be inside the runs dir ({runs_home()})")
+    else:
+        out = (run if run else new_run_dir()) / "skills.json"
     write_json(out, {"kind": "skills", "skills": skills})
     print(json.dumps({
         "out": str(out), "skills": len(skills),

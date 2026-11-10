@@ -139,6 +139,80 @@ def test_collect_no_sessions(home):
     assert code == 3 and json.loads(out)["ok"] is False
 
 
+SECRET = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def test_collect_redacts_every_output(home):
+    """A secret in a repeated prompt, a command and an error must not reach any artifact."""
+    h, env, tmp = home
+    for i in range(3):
+        _claude_session(h, f"r{i}", [f"never push with {SECRET} again, use the deploy key",
+                                     "always run the linter first please"],
+                        [f"token={SECRET} git push origin main", f"curl -H 'Authorization: Bearer {SECRET}' https://x"],
+                        err=True, day=i + 1)
+    code, out, err = run("reflect_collect.py", "--since", "2000-01-01", "--run", "sec", env=env)
+    assert code == 0, err
+    rd = tmp / "runs" / "sec"
+    for f in ("bundle.json", "sessions.jsonl"):
+        text = (rd / f).read_text().lower()
+        assert SECRET.lower() not in text, f"secret leaked into {f}"
+        assert "hunter" not in text
+        assert str(h).lower() not in text, f"home path leaked into {f}"
+    b = json.loads((rd / "bundle.json").read_text())
+    assert b["repeated_corrections"], "the repeated correction should still cluster"
+    assert all(SECRET.lower() not in c["key"] for c in b["repeated_corrections"] + b["repeated_instructions"])
+
+
+def test_collect_dedupes_replayed_calls_per_adapter(home):
+    """Same tool_use id in two Claude Code files (a resumed session) counts once."""
+    h, env, tmp = home
+    rc.SEEN_CALLS.clear()
+    _claude_session(h, "a", ["first prompt here for the session"], ["ls -la"], day=1)
+    p = h / ".claude" / "projects" / "-repo"
+    (p / "b.jsonl").write_text((p / "a.jsonl").read_text().replace('"sessionId": "a"', '"sessionId": "b"'))
+    code, out, err = run("reflect_collect.py", "--since", "2000-01-01", "--run", "dd", env=env)
+    assert code == 0, err
+    assert json.loads(out)["totals"]["tool_calls"] == 1
+
+
+def test_bash_shape_drops_assignments():
+    assert "hunter2" not in rc.bash_shape("token=hunter2secret git push")
+    assert rc.bash_shape("token=hunter2secret git push") == "git push"
+
+
+def test_no_quadratic_backtracking():
+    import time
+    t = time.time()
+    rc.operator_texts("[NOTE x " * 20000, None)
+    rc.operator_texts("[Skill directory: " + "y" * 200000, None)
+    assert time.time() - t < 0.5
+
+
+def test_run_id_cannot_escape(home):
+    _, env, tmp = home
+    code, _, err = run("reflect_collect.py", "--since", "2000-01-01", "--run", "../escape", env=env)
+    assert code == 2 and not (tmp / "escape").exists()
+
+
+def test_skills_never_writes_to_cwd(home, tmp_path):
+    h, env, tmp = home
+    work = tmp_path / "cwd"
+    work.mkdir()
+    code, out, _ = run("reflect_skills.py", env=env, cwd=work)
+    assert code == 0 and not (work / "skills.json").exists()
+    code, _, _ = run("reflect_skills.py", "--out", str(work / "x.json"), env=env, cwd=work)
+    assert code == 2 and not (work / "x.json").exists()
+
+
+def test_recur_output_is_redacted(home, tmp_path):
+    h, env, _ = home
+    mem = h / ".claude" / "projects" / "p" / "memory"
+    mem.mkdir(parents=True)
+    (mem / "m.md").write_text(f"deploy key rotation: api_key={SECRET} for the staging deploy\n")
+    out = run("reflect_recur.py", "deploy", "key", "staging", env=env, cwd=tmp_path)[1]
+    assert json.loads(out)["hits"] and SECRET not in out
+
+
 # ------------------------------------------------------------------ ledger
 
 def test_ledger_fold_and_denial_memory(home):
@@ -152,6 +226,16 @@ def test_ledger_fold_and_denial_memory(home):
     assert run("reflect_ledger.py", "status", "--id", "F-nope", "--to", "applied", env=env)[0] == 1
     st = json.loads(run("reflect_ledger.py", "stats", env=env)[1])
     assert st["by_status"] == {"denied": 1}
+    # a malformed / hand-edited row must not break every reader
+    lp = Path(run("reflect_ledger.py", "path", env=env)[1].strip())
+    with lp.open("a") as fh:
+        fh.write('{"id": "F-x"}\n{"id": "F-1", "op": "status"}\nnot json\n')
+    code, out, _ = run("reflect_ledger.py", "stats", env=env)
+    assert code == 0 and json.loads(out)["by_status"] == {"denied": 1}
+    # append-only: every write grows the file, nothing is rewritten
+    before = lp.read_text()
+    run("reflect_ledger.py", "status", "--id", "F-1", "--to", "deferred", env=env)
+    assert lp.read_text().startswith(before)
 
 
 # ------------------------------------------------------------------ recur / render / skills / backfill

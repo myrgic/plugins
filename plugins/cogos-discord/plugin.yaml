@@ -1,0 +1,11 @@
+name: cogos-discord
+version: 0.1.0
+description: >
+  Layer over Hermes's bundled Discord adapter. v0.1: threads the bot itself created (for example
+  forum posts made over REST) count as threads the bot is in, so it answers there without an @mention.
+  Replaces the bundled `discord` platform entry with a copy whose only change is the adapter class.
+author: myrgic
+kind: standalone
+platforms:
+  - macos
+  - linux
